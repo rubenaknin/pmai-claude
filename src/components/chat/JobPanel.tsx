@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { JobCard, Job } from "./JobCard";
 
+const PAGE_SIZE = 10;
+
 interface JobPanelProps {
   jobs: Job[];
+  totalJobs: number;
   onApply: (jobId: string) => void;
   onApplyAll: () => void;
   appliedJobs: Set<string>;
@@ -16,26 +18,41 @@ interface JobPanelProps {
 
 export function JobPanel({
   jobs,
+  totalJobs,
   onApply,
   onApplyAll,
   appliedJobs,
   allApplied,
   onClose,
 }: JobPanelProps) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   const enrichedJobs = jobs.map((j) => ({
     ...j,
     applied: allApplied || appliedJobs.has(j.id),
   }));
   const isAllApplied = allApplied || appliedJobs.size === jobs.length;
+  const visibleJobs = enrichedJobs.slice(0, visibleCount);
+  const hasMore = visibleCount < enrichedJobs.length;
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el || !hasMore) return;
+    // Load more when scrolled within 200px of the bottom
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+      setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, jobs.length));
+    }
+  }, [hasMore, jobs.length]);
 
   return (
-    <aside className="hidden lg:flex w-96 flex-col border-l border-border/50 bg-background">
+    <aside className="hidden lg:flex w-96 flex-col border-l border-border/50 bg-background overflow-hidden">
       {/* Panel header */}
-      <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">
+      <div className="flex h-14 items-center justify-between border-b border-border/50 px-4 shrink-0">
         <div>
           <h2 className="text-sm font-semibold">Matching Jobs</h2>
           <p className="text-[11px] text-muted-foreground">
-            {jobs.length} of 20 shown
+            {jobs.length} of {totalJobs} matches
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -69,14 +86,32 @@ export function JobPanel({
         </div>
       </div>
 
-      {/* Job list */}
-      <ScrollArea className="flex-1">
+      {/* Job list — isolated scroll */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overscroll-contain"
+      >
         <div className="space-y-2 p-3">
-          {enrichedJobs.map((job) => (
+          {visibleJobs.map((job) => (
             <JobCard key={job.id} job={job} onApply={onApply} compact />
           ))}
+          {hasMore && (
+            <div className="py-3 text-center">
+              <button
+                onClick={() =>
+                  setVisibleCount((prev) =>
+                    Math.min(prev + PAGE_SIZE, jobs.length)
+                  )
+                }
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Load more jobs...
+              </button>
+            </div>
+          )}
         </div>
-      </ScrollArea>
+      </div>
     </aside>
   );
 }

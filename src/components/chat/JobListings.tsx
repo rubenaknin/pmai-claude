@@ -6,6 +6,7 @@ import { JobCard, Job } from "./JobCard";
 
 interface JobListingsProps {
   jobs: Job[];
+  totalJobs: number;
   onApply: (jobId: string) => void;
   onApplyAll: () => void;
   appliedJobs: Set<string>;
@@ -14,6 +15,7 @@ interface JobListingsProps {
 
 export function JobListings({
   jobs,
+  totalJobs,
   onApply,
   onApplyAll,
   appliedJobs,
@@ -35,7 +37,7 @@ export function JobListings({
     <div className="w-full space-y-2 lg:hidden">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Top {jobs.length} of 20 matches
+          Top {jobs.length} of {totalJobs} matches
         </p>
         <Button
           size="sm"

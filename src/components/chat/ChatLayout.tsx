@@ -19,58 +19,40 @@ const MOCK_CONVERSATIONS = [
 ];
 
 const MOCK_JOBS: Job[] = [
-  {
-    id: "1",
-    title: "Senior Frontend Engineer",
-    company: "Acme Corp",
-    location: "San Francisco, CA",
-    salary: "$160k – $200k",
-    matchPercent: 95,
-    tags: ["React", "TypeScript", "Next.js"],
-  },
-  {
-    id: "2",
-    title: "Staff Software Engineer",
-    company: "TechFlow",
-    location: "New York, NY (Hybrid)",
-    salary: "$180k – $220k",
-    matchPercent: 92,
-    tags: ["React", "Node.js", "AWS"],
-  },
-  {
-    id: "3",
-    title: "Frontend Developer",
-    company: "StartupXYZ",
-    location: "Remote",
-    salary: "$130k – $170k",
-    matchPercent: 88,
-    tags: ["React", "TypeScript", "Tailwind"],
-  },
-  {
-    id: "4",
-    title: "Full Stack Engineer",
-    company: "DataDrive",
-    location: "Austin, TX",
-    salary: "$150k – $190k",
-    matchPercent: 85,
-    tags: ["React", "Python", "PostgreSQL"],
-  },
-  {
-    id: "5",
-    title: "Software Engineer II",
-    company: "CloudBase",
-    location: "Seattle, WA",
-    salary: "$145k – $185k",
-    matchPercent: 82,
-    tags: ["TypeScript", "React", "Kubernetes"],
-  },
+  { id: "1", title: "Senior Frontend Engineer", company: "Acme Corp", location: "San Francisco, CA", salary: "$160k – $200k", matchPercent: 95, tags: ["React", "TypeScript", "Next.js"] },
+  { id: "2", title: "Staff Software Engineer", company: "TechFlow", location: "New York, NY (Hybrid)", salary: "$180k – $220k", matchPercent: 92, tags: ["React", "Node.js", "AWS"] },
+  { id: "3", title: "Frontend Developer", company: "StartupXYZ", location: "Remote", salary: "$130k – $170k", matchPercent: 88, tags: ["React", "TypeScript", "Tailwind"] },
+  { id: "4", title: "Full Stack Engineer", company: "DataDrive", location: "Austin, TX", salary: "$150k – $190k", matchPercent: 85, tags: ["React", "Python", "PostgreSQL"] },
+  { id: "5", title: "Software Engineer II", company: "CloudBase", location: "Seattle, WA", salary: "$145k – $185k", matchPercent: 82, tags: ["TypeScript", "React", "Kubernetes"] },
+  { id: "6", title: "Frontend Engineer", company: "Stripe", location: "San Francisco, CA", salary: "$170k – $210k", matchPercent: 80, tags: ["React", "TypeScript", "CSS"] },
+  { id: "7", title: "Senior Software Engineer", company: "Notion", location: "New York, NY", salary: "$165k – $205k", matchPercent: 79, tags: ["React", "TypeScript", "Node.js"] },
+  { id: "8", title: "UI Engineer", company: "Figma", location: "San Francisco, CA", salary: "$155k – $195k", matchPercent: 78, tags: ["React", "WebGL", "TypeScript"] },
+  { id: "9", title: "Frontend Lead", company: "Vercel", location: "Remote", salary: "$175k – $215k", matchPercent: 77, tags: ["Next.js", "React", "TypeScript"] },
+  { id: "10", title: "Software Engineer, Frontend", company: "Coinbase", location: "Remote", salary: "$150k – $195k", matchPercent: 76, tags: ["React", "GraphQL", "TypeScript"] },
+  { id: "11", title: "Senior React Developer", company: "Shopify", location: "Remote", salary: "$140k – $185k", matchPercent: 75, tags: ["React", "Ruby", "GraphQL"] },
+  { id: "12", title: "Frontend Engineer II", company: "Airbnb", location: "San Francisco, CA", salary: "$160k – $200k", matchPercent: 74, tags: ["React", "TypeScript", "Testing"] },
+  { id: "13", title: "Web Developer", company: "Twilio", location: "Denver, CO (Hybrid)", salary: "$135k – $175k", matchPercent: 73, tags: ["React", "Node.js", "REST APIs"] },
+  { id: "14", title: "Software Engineer, UI", company: "Datadog", location: "New York, NY", salary: "$155k – $195k", matchPercent: 72, tags: ["React", "TypeScript", "D3.js"] },
+  { id: "15", title: "Frontend Platform Engineer", company: "Netflix", location: "Los Gatos, CA", salary: "$180k – $250k", matchPercent: 71, tags: ["React", "Node.js", "Performance"] },
+  { id: "16", title: "Senior Web Engineer", company: "Atlassian", location: "Remote", salary: "$145k – $190k", matchPercent: 70, tags: ["React", "TypeScript", "Monorepo"] },
+  { id: "17", title: "Frontend Developer", company: "HubSpot", location: "Cambridge, MA", salary: "$130k – $170k", matchPercent: 69, tags: ["React", "JavaScript", "CSS"] },
+  { id: "18", title: "Software Engineer III", company: "Lyft", location: "San Francisco, CA", salary: "$155k – $200k", matchPercent: 68, tags: ["React", "TypeScript", "Mobile Web"] },
+  { id: "19", title: "UI/Frontend Engineer", company: "Slack", location: "San Francisco, CA", salary: "$150k – $195k", matchPercent: 67, tags: ["React", "Electron", "TypeScript"] },
+  { id: "20", title: "React Developer", company: "Squarespace", location: "New York, NY", salary: "$135k – $175k", matchPercent: 66, tags: ["React", "Next.js", "CSS-in-JS"] },
+  { id: "21", title: "Senior Frontend Engineer", company: "Plaid", location: "San Francisco, CA", salary: "$165k – $210k", matchPercent: 65, tags: ["React", "TypeScript", "Security"] },
+  { id: "22", title: "Full Stack Developer", company: "Retool", location: "San Francisco, CA", salary: "$150k – $190k", matchPercent: 64, tags: ["React", "Node.js", "PostgreSQL"] },
+  { id: "23", title: "Frontend Engineer", company: "Linear", location: "Remote", salary: "$140k – $180k", matchPercent: 63, tags: ["React", "TypeScript", "Performance"] },
+  { id: "24", title: "Software Engineer, Web", company: "Ramp", location: "New York, NY", salary: "$155k – $200k", matchPercent: 62, tags: ["React", "TypeScript", "Fintech"] },
+  { id: "25", title: "Senior UI Developer", company: "Canva", location: "Remote", salary: "$145k – $185k", matchPercent: 61, tags: ["React", "TypeScript", "Canvas API"] },
 ];
+
+const TOTAL_MATCHING_JOBS = 127;
 
 const INITIAL_MESSAGE: Message = {
   id: "1",
   role: "bot",
   content:
-    "Hi! I'm your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
+    "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
 };
 
 type StepId =
@@ -138,7 +120,7 @@ export function ChatLayout() {
     setAppliedJobs(new Set(MOCK_JOBS.map((j) => j.id)));
     setSuggestions([]);
     await addBotMessage(
-      "Applying to all 5 jobs... I'm tailoring your resume for each position to maximize your chances."
+      "Applying to all 25 jobs... I'm tailoring your resume for each position to maximize your chances."
     );
     await addBotMessage(
       "Here's a preview of how I adapted your resume for the top match:",
@@ -146,9 +128,9 @@ export function ChatLayout() {
       1500
     );
     await addBotMessage(
-      "All done! I've submitted 5 tailored applications.",
+      "All done! I've submitted 25 tailored applications.",
       {
-        customComponent: <ApplicationStatusCard jobCount={5} />,
+        customComponent: <ApplicationStatusCard jobCount={25} />,
       },
       1500
     );
@@ -165,13 +147,13 @@ export function ChatLayout() {
   const handleEmailSend = useCallback(async () => {
     setSuggestions([]);
     await addBotMessage(
-      "Sending personalized emails to hiring managers at all 5 companies..."
+      "Sending personalized emails to hiring managers at all 25 companies..."
     );
     await addBotMessage(
       "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
       {
         customComponent: (
-          <ApplicationStatusCard jobCount={5} emailsSent={true} />
+          <ApplicationStatusCard jobCount={25} emailsSent={true} />
         ),
       },
       2000
@@ -202,12 +184,13 @@ export function ChatLayout() {
         // Open the right panel on desktop
         setShowJobPanel(true);
         await addBotMessage(
-          "Great news — I found 20 jobs that match your profile! Here are your top 5 matches.",
+          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! I'm showing the top 25 sorted by relevance. You can browse them all, apply individually, or let me apply to all of them at once.`,
           {
             // Mobile: show expandable job list inline
             customComponent: (
               <JobListings
                 jobs={MOCK_JOBS}
+                totalJobs={TOTAL_MATCHING_JOBS}
                 onApply={handleApplySingle}
                 onApplyAll={handleApplyAll}
                 appliedJobs={appliedJobs}
@@ -216,12 +199,6 @@ export function ChatLayout() {
             ),
           },
           2000
-        );
-        // Desktop: also add a prompt to look at the panel
-        await addBotMessage(
-          "You can browse and apply to individual jobs, or hit \"Apply for all\" to let me handle everything.",
-          undefined,
-          800
         );
         setStep("jobs-shown");
         setSuggestions([
@@ -422,6 +399,7 @@ export function ChatLayout() {
       {showJobPanel && (
         <JobPanel
           jobs={MOCK_JOBS}
+          totalJobs={TOTAL_MATCHING_JOBS}
           onApply={handleApplySingle}
           onApplyAll={handleApplyAll}
           appliedJobs={appliedJobs}

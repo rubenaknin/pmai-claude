@@ -88,28 +88,13 @@ export function Hero() {
                 P
               </div>
               <span className="text-xs font-medium text-muted-foreground">
-                PitchMeAI Assistant
+                Nikki, your assistant
               </span>
-              <div className="ml-auto flex items-center gap-1">
-                <div className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-[10px] text-muted-foreground">
-                  Online
-                </span>
-              </div>
             </div>
 
-            {/* Mock messages */}
-            <div className="px-5 py-4 space-y-3 text-left">
-              <div className="flex gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
-                  P
-                </div>
-                <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm">
-                  Hi! Upload your resume to get started. I&apos;ll find matching
-                  jobs, tailor your resume for each one, and apply for you.
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pl-9 text-xs text-muted-foreground">
+            {/* Resume upload hint */}
+            <div className="px-5 py-5 text-left">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="14"
@@ -123,7 +108,7 @@ export function Hero() {
                 >
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>
-                <span>Drop your resume here or paste a job link to begin</span>
+                <span>Recommended: drop your resume here</span>
               </div>
             </div>
 
