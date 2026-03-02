@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PitchMe AI — Your AI Job Application Assistant",
+  title: "PitchMeAI — Your AI Job Application Assistant",
   description:
-    "PitchMe AI crafts a unique resume for every job and reaches out to hiring managers on your behalf.",
+    "PitchMeAI crafts a unique resume for every job and reaches out to hiring managers on your behalf.",
 };
 
 export default function RootLayout({

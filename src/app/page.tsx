@@ -12,7 +12,7 @@ export default function Home() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
               P
             </div>
-            <span className="text-lg font-semibold">PitchMe AI</span>
+            <span className="text-lg font-semibold">PitchMeAI</span>
           </div>
           <nav className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
             <a

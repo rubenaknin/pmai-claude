@@ -7,7 +7,7 @@ export function Footer() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
               P
             </div>
-            <span className="text-lg font-semibold">PitchMe AI</span>
+            <span className="text-lg font-semibold">PitchMeAI</span>
           </div>
           <nav className="flex gap-6 text-sm text-muted-foreground">
             <a href="#how-it-works" className="hover:text-foreground transition-colors">
@@ -25,7 +25,7 @@ export function Footer() {
           </nav>
         </div>
         <div className="mt-8 border-t border-border/50 pt-8 text-center text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} PitchMe AI. All rights reserved.
+          &copy; {new Date().getFullYear()} PitchMeAI. All rights reserved.
         </div>
       </div>
     </footer>
