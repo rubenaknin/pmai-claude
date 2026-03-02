@@ -45,27 +45,80 @@ export function JobDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader className="text-left pb-0">
-          <div className="flex items-start gap-3">
-            <div
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${logoColor} text-white text-lg font-bold`}
-            >
-              {job.company.charAt(0)}
+      <SheetContent className="w-full sm:max-w-lg overflow-y-auto p-0">
+        {/* Sticky header with logo, title, and CTAs */}
+        <div className="sticky top-0 z-10 bg-background border-b border-border/50 px-6 pt-6 pb-4 space-y-4">
+          <SheetHeader className="text-left pb-0">
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${logoColor} text-white text-lg font-bold`}
+              >
+                {job.company.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <SheetTitle className="text-lg leading-tight">
+                  {job.title}
+                </SheetTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {job.company} · {job.location}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <SheetTitle className="text-lg leading-tight">
-                {job.title}
-              </SheetTitle>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {job.company} · {job.location}
-              </p>
-            </div>
-          </div>
-        </SheetHeader>
+          </SheetHeader>
 
-        <div className="mt-4 space-y-5">
-          {/* Quick info */}
+          {/* CTAs at top */}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => onApply(job.id)}
+              disabled={job.status.applied}
+              className="text-xs h-8"
+            >
+              {job.status.applied ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  Applied
+                </>
+              ) : (
+                "Apply for me"
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onEmailHM(job)}
+              disabled={job.status.emailSent}
+              className="text-xs h-8"
+            >
+              {job.status.emailSent ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  Emailed
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
+                  Email {job.status.hiringManagerName || "HM"}
+                </>
+              )}
+            </Button>
+            <button
+              onClick={() => onSave(job.id)}
+              className={`rounded-lg p-1.5 transition-colors ${
+                job.status.saved
+                  ? "text-foreground bg-muted"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              title={job.status.saved ? "Saved" : "Save job"}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={job.status.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" /></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="px-6 py-5 space-y-5">
+          {/* Quick info badges */}
           <div className="flex flex-wrap gap-2">
             <Badge
               variant="secondary"
@@ -149,17 +202,17 @@ export function JobDetailSheet({
           <Separator />
 
           {/* Description */}
-          <div>
-            <h4 className="text-sm font-semibold mb-2">About the Role</h4>
+          <div className="px-1">
+            <h4 className="text-sm font-semibold mb-3">About the Role</h4>
             <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">
               {job.description}
             </p>
           </div>
 
           {/* Requirements */}
-          <div>
-            <h4 className="text-sm font-semibold mb-2">Requirements</h4>
-            <ul className="space-y-1.5">
+          <div className="px-1">
+            <h4 className="text-sm font-semibold mb-3">Requirements</h4>
+            <ul className="space-y-2">
               {job.requirements.map((req, i) => (
                 <li
                   key={i}
@@ -172,60 +225,7 @@ export function JobDetailSheet({
             </ul>
           </div>
 
-          <Separator />
-
-          {/* Actions */}
-          <div className="flex flex-col gap-2 pb-4">
-            <Button
-              onClick={() => onApply(job.id)}
-              disabled={job.status.applied}
-              className="w-full"
-            >
-              {job.status.applied ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><polyline points="20 6 9 17 4 12" /></svg>
-                  Applied {job.status.appliedAt}
-                </>
-              ) : (
-                "Apply for me"
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onEmailHM(job)}
-              disabled={job.status.emailSent}
-              className="w-full"
-            >
-              {job.status.emailSent ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><polyline points="20 6 9 17 4 12" /></svg>
-                  Email sent to {job.status.hiringManagerName}
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
-                  Email {job.status.hiringManagerName || "hiring manager"}
-                </>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => onSave(job.id)}
-              className="w-full"
-            >
-              {job.status.saved ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" /></svg>
-                  Saved
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" /></svg>
-                  Save job
-                </>
-              )}
-            </Button>
-          </div>
+          <div className="h-4" />
         </div>
       </SheetContent>
     </Sheet>
@@ -251,7 +251,13 @@ function StatusRow({
         />
         <span className="text-muted-foreground">{label}</span>
       </div>
-      <span className={active ? "text-foreground text-xs" : "text-muted-foreground/60 text-xs"}>
+      <span
+        className={
+          active
+            ? "text-foreground text-xs"
+            : "text-muted-foreground/60 text-xs"
+        }
+      >
         {status}
       </span>
     </div>

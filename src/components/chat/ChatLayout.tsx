@@ -221,7 +221,7 @@ export function ChatLayout() {
         );
         setShowJobPanel(true);
         await addBotMessage(
-          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! I'm showing the top ${jobs.length} sorted by relevance. You can browse them all, apply individually, or let me apply to all of them at once.`,
+          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! You can browse them, apply individually, or let me apply to all of them at once.`,
           {
             customComponent: (
               <JobListings
@@ -251,6 +251,7 @@ export function ChatLayout() {
           "I'm on it! I'll keep monitoring new job postings. Whenever a new job matches your profile, I'll send you an email so you can decide if you'd like me to apply. You'll never miss an opportunity!"
         );
         setStep("done");
+        setShowJobPanel(false);
         setSuggestions([]);
       }
     },
