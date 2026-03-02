@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 const PLACEHOLDERS = [
-  "Find me senior engineer roles in NYC...",
+  "Upload my resume and find matching jobs...",
+  "I'm a senior engineer looking for roles in NYC...",
   "Tailor my resume for a product manager role...",
   "Apply to all matching jobs for me...",
   "Email hiring managers at top tech companies...",
-  "Search for remote data scientist positions...",
 ];
 
 export function Hero() {
@@ -17,7 +17,7 @@ export function Hero() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [value, setValue] = useState("");
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const current = PLACEHOLDERS[placeholderIndex];
@@ -25,7 +25,9 @@ export function Hero() {
     if (!isDeleting) {
       if (displayedPlaceholder.length < current.length) {
         const timeout = setTimeout(() => {
-          setDisplayedPlaceholder(current.slice(0, displayedPlaceholder.length + 1));
+          setDisplayedPlaceholder(
+            current.slice(0, displayedPlaceholder.length + 1)
+          );
         }, 40);
         return () => clearTimeout(timeout);
       } else {
@@ -52,11 +54,18 @@ export function Hero() {
     router.push(`/chat?q=${encodeURIComponent(trimmed)}`);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
   return (
-    <section className="relative overflow-hidden px-6 py-24 sm:py-32 lg:px-8">
+    <section className="relative overflow-hidden px-6 py-20 sm:py-28 lg:px-8">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(45%_40%_at_50%_60%,var(--color-primary)/5%,transparent)]" />
-      <div className="mx-auto max-w-2xl text-center">
-        <div className="mb-8 flex justify-center">
+      <div className="mx-auto max-w-3xl text-center">
+        <div className="mb-6 flex justify-center">
           <div className="relative rounded-full px-3 py-1 text-sm text-muted-foreground ring-1 ring-border">
             AI-powered job applications — now in beta
           </div>
@@ -64,61 +73,116 @@ export function Hero() {
         <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
           Your AI Job Application Assistant
         </h1>
-        <p className="mt-6 text-lg leading-8 text-muted-foreground">
-          PitchMeAI crafts a unique resume for every job and reaches out to
-          hiring managers on your behalf. Stop sending generic applications —
-          start getting interviews.
+        <p className="mt-5 text-lg leading-8 text-muted-foreground">
+          Upload your resume, and PitchMeAI finds matching jobs, tailors your
+          resume for each one, applies, and emails hiring managers — all
+          automatically.
         </p>
-        <form onSubmit={handleSubmit} className="mt-10 mx-auto max-w-xl">
-          <div
-            className="flex items-center gap-2 rounded-2xl border border-border bg-background p-2 shadow-lg transition-shadow focus-within:shadow-xl focus-within:ring-2 focus-within:ring-ring/20 cursor-text"
-            onClick={() => inputRef.current?.focus()}
-          >
-            <div className="pl-3 text-muted-foreground">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
+
+        {/* Chat-style window */}
+        <form onSubmit={handleSubmit} className="mt-10 mx-auto max-w-2xl">
+          <div className="rounded-2xl border border-border bg-background shadow-xl overflow-hidden">
+            {/* Mock chat header */}
+            <div className="flex items-center gap-2 border-b border-border/50 px-5 py-3">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
+                P
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">
+                PitchMeAI Assistant
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <div className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-[10px] text-muted-foreground">
+                  Online
+                </span>
+              </div>
             </div>
-            <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={displayedPlaceholder}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 sm:text-base"
-            />
-            <button
-              type="submit"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
-            </button>
+
+            {/* Mock messages */}
+            <div className="px-5 py-4 space-y-3 text-left">
+              <div className="flex gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                  P
+                </div>
+                <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm">
+                  Hi! Upload your resume to get started. I&apos;ll find matching
+                  jobs, tailor your resume for each one, and apply for you.
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pl-9 text-xs text-muted-foreground">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span>Drop your resume here or paste a job link to begin</span>
+              </div>
+            </div>
+
+            {/* Input area */}
+            <div className="border-t border-border/50 px-4 py-3">
+              <div className="flex items-end gap-2">
+                <button
+                  type="button"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted transition-colors"
+                  onClick={() => router.push("/chat")}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </button>
+                <textarea
+                  ref={inputRef}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={displayedPlaceholder}
+                  rows={2}
+                  className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 sm:text-base leading-relaxed"
+                />
+                <button
+                  type="submit"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+                    <path d="m21.854 2.147-10.94 10.939" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Try it — type anything and start chatting with your AI assistant
+            Type a message or upload your resume to start — you&apos;ll be taken
+            to the full chat experience
           </p>
         </form>
       </div>
