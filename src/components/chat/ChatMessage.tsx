@@ -28,7 +28,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       {isBot && (
         <Avatar className="h-8 w-8 shrink-0">
           <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">
-            P
+            N
           </AvatarFallback>
         </Avatar>
       )}

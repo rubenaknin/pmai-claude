@@ -79,41 +79,21 @@ export function Hero() {
           automatically.
         </p>
 
-        {/* Chat-style window */}
+        {/* Chat-style window — single frame */}
         <form onSubmit={handleSubmit} className="mt-10 mx-auto max-w-2xl">
           <div className="rounded-2xl border border-border bg-background shadow-xl overflow-hidden">
-            {/* Mock chat header */}
+            {/* Header */}
             <div className="flex items-center gap-2 border-b border-border/50 px-5 py-3">
               <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
-                P
+                N
               </div>
               <span className="text-xs font-medium text-muted-foreground">
                 Nikki, your assistant
               </span>
             </div>
 
-            {/* Resume upload hint */}
-            <div className="px-5 py-5 text-left">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-                <span>Recommended: drop your resume here</span>
-              </div>
-            </div>
-
-            {/* Input area */}
-            <div className="border-t border-border/50 px-4 py-3">
+            {/* Input + resume hint in one section */}
+            <div className="px-4 pt-4 pb-3">
               <div className="flex items-end gap-2">
                 <button
                   type="button"
@@ -162,6 +142,23 @@ export function Hero() {
                     <path d="m21.854 2.147-10.94 10.939" />
                   </svg>
                 </button>
+              </div>
+              {/* Resume hint at bottom */}
+              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span>Recommended: drop your resume here</span>
               </div>
             </div>
           </div>

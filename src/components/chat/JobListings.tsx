@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { JobCard, Job } from "./JobCard";
+import { JobCard } from "./JobCard";
+import { Job } from "./jobData";
 
 interface JobListingsProps {
   jobs: Job[];
   totalJobs: number;
   onApply: (jobId: string) => void;
   onApplyAll: () => void;
-  appliedJobs: Set<string>;
-  allApplied: boolean;
+  onViewDetail: (job: Job) => void;
+  onSave: (jobId: string) => void;
+  onEmailHM: (job: Job) => void;
 }
 
 export function JobListings({
@@ -18,20 +20,15 @@ export function JobListings({
   totalJobs,
   onApply,
   onApplyAll,
-  appliedJobs,
-  allApplied,
+  onViewDetail,
+  onSave,
+  onEmailHM,
 }: JobListingsProps) {
-  const [expanded, setExpanded] = useState(false);
-  const isAllApplied = allApplied || appliedJobs.size === jobs.length;
-
-  const enrichedJobs = jobs.map((j) => ({
-    ...j,
-    applied: allApplied || appliedJobs.has(j.id),
-  }));
-
-  // Show first 3, rest are behind expand
-  const visibleJobs = expanded ? enrichedJobs : enrichedJobs.slice(0, 3);
-  const hiddenCount = enrichedJobs.length - 3;
+  const [visibleCount, setVisibleCount] = useState(3);
+  const allApplied = jobs.every((j) => j.status.applied);
+  const visibleJobs = jobs.slice(0, visibleCount);
+  const hasMore = visibleCount < jobs.length;
+  const hiddenCount = jobs.length - visibleCount;
 
   return (
     <div className="w-full space-y-2 lg:hidden">
@@ -43,56 +40,39 @@ export function JobListings({
           size="sm"
           className="text-xs h-7"
           onClick={onApplyAll}
-          disabled={isAllApplied}
+          disabled={allApplied}
         >
-          {isAllApplied ? "All Applied" : "Apply for all"}
+          {allApplied ? "All Applied" : "Apply for all"}
         </Button>
       </div>
       <div className="space-y-2">
         {visibleJobs.map((job) => (
-          <JobCard key={job.id} job={job} onApply={onApply} />
+          <JobCard
+            key={job.id}
+            job={job}
+            onApply={onApply}
+            onViewDetail={onViewDetail}
+            onSave={onSave}
+            onEmailHM={onEmailHM}
+          />
         ))}
       </div>
-      {!expanded && hiddenCount > 0 && (
+      {hasMore && (
         <button
-          onClick={() => setExpanded(true)}
+          onClick={() => setVisibleCount((prev) => Math.min(prev + 10, jobs.length))}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border/50 py-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-          Show {hiddenCount} more jobs
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          Show {Math.min(hiddenCount, 10)} more jobs
         </button>
       )}
-      {expanded && hiddenCount > 0 && (
+      {visibleCount > 3 && (
         <button
-          onClick={() => setExpanded(false)}
+          onClick={() => setVisibleCount(3)}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border/50 py-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m18 15-6-6-6 6" />
-          </svg>
-          Show less
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+          Collapse
         </button>
       )}
     </div>

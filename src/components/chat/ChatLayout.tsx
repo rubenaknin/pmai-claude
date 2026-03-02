@@ -8,45 +8,17 @@ import { ChatMessage, Message } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { JobPanel } from "./JobPanel";
 import { JobListings } from "./JobListings";
+import { JobDetailSheet } from "./JobDetailSheet";
+import { EmailComposer } from "./EmailComposer";
 import { ApplicationStatusCard } from "./ApplicationStatusCard";
 import { ResumePreviewCard } from "./ResumePreviewCard";
-import { Job } from "./JobCard";
+import { Job, MOCK_JOBS as RAW_MOCK_JOBS, TOTAL_MATCHING_JOBS } from "./jobData";
 
 const MOCK_CONVERSATIONS = [
   { id: "1", title: "Job Search — Frontend Engineer", active: true },
   { id: "2", title: "Resume Review", active: false },
   { id: "3", title: "Interview Prep — DataDrive", active: false },
 ];
-
-const MOCK_JOBS: Job[] = [
-  { id: "1", title: "Senior Frontend Engineer", company: "Acme Corp", location: "San Francisco, CA", salary: "$160k – $200k", matchPercent: 95, tags: ["React", "TypeScript", "Next.js"] },
-  { id: "2", title: "Staff Software Engineer", company: "TechFlow", location: "New York, NY (Hybrid)", salary: "$180k – $220k", matchPercent: 92, tags: ["React", "Node.js", "AWS"] },
-  { id: "3", title: "Frontend Developer", company: "StartupXYZ", location: "Remote", salary: "$130k – $170k", matchPercent: 88, tags: ["React", "TypeScript", "Tailwind"] },
-  { id: "4", title: "Full Stack Engineer", company: "DataDrive", location: "Austin, TX", salary: "$150k – $190k", matchPercent: 85, tags: ["React", "Python", "PostgreSQL"] },
-  { id: "5", title: "Software Engineer II", company: "CloudBase", location: "Seattle, WA", salary: "$145k – $185k", matchPercent: 82, tags: ["TypeScript", "React", "Kubernetes"] },
-  { id: "6", title: "Frontend Engineer", company: "Stripe", location: "San Francisco, CA", salary: "$170k – $210k", matchPercent: 80, tags: ["React", "TypeScript", "CSS"] },
-  { id: "7", title: "Senior Software Engineer", company: "Notion", location: "New York, NY", salary: "$165k – $205k", matchPercent: 79, tags: ["React", "TypeScript", "Node.js"] },
-  { id: "8", title: "UI Engineer", company: "Figma", location: "San Francisco, CA", salary: "$155k – $195k", matchPercent: 78, tags: ["React", "WebGL", "TypeScript"] },
-  { id: "9", title: "Frontend Lead", company: "Vercel", location: "Remote", salary: "$175k – $215k", matchPercent: 77, tags: ["Next.js", "React", "TypeScript"] },
-  { id: "10", title: "Software Engineer, Frontend", company: "Coinbase", location: "Remote", salary: "$150k – $195k", matchPercent: 76, tags: ["React", "GraphQL", "TypeScript"] },
-  { id: "11", title: "Senior React Developer", company: "Shopify", location: "Remote", salary: "$140k – $185k", matchPercent: 75, tags: ["React", "Ruby", "GraphQL"] },
-  { id: "12", title: "Frontend Engineer II", company: "Airbnb", location: "San Francisco, CA", salary: "$160k – $200k", matchPercent: 74, tags: ["React", "TypeScript", "Testing"] },
-  { id: "13", title: "Web Developer", company: "Twilio", location: "Denver, CO (Hybrid)", salary: "$135k – $175k", matchPercent: 73, tags: ["React", "Node.js", "REST APIs"] },
-  { id: "14", title: "Software Engineer, UI", company: "Datadog", location: "New York, NY", salary: "$155k – $195k", matchPercent: 72, tags: ["React", "TypeScript", "D3.js"] },
-  { id: "15", title: "Frontend Platform Engineer", company: "Netflix", location: "Los Gatos, CA", salary: "$180k – $250k", matchPercent: 71, tags: ["React", "Node.js", "Performance"] },
-  { id: "16", title: "Senior Web Engineer", company: "Atlassian", location: "Remote", salary: "$145k – $190k", matchPercent: 70, tags: ["React", "TypeScript", "Monorepo"] },
-  { id: "17", title: "Frontend Developer", company: "HubSpot", location: "Cambridge, MA", salary: "$130k – $170k", matchPercent: 69, tags: ["React", "JavaScript", "CSS"] },
-  { id: "18", title: "Software Engineer III", company: "Lyft", location: "San Francisco, CA", salary: "$155k – $200k", matchPercent: 68, tags: ["React", "TypeScript", "Mobile Web"] },
-  { id: "19", title: "UI/Frontend Engineer", company: "Slack", location: "San Francisco, CA", salary: "$150k – $195k", matchPercent: 67, tags: ["React", "Electron", "TypeScript"] },
-  { id: "20", title: "React Developer", company: "Squarespace", location: "New York, NY", salary: "$135k – $175k", matchPercent: 66, tags: ["React", "Next.js", "CSS-in-JS"] },
-  { id: "21", title: "Senior Frontend Engineer", company: "Plaid", location: "San Francisco, CA", salary: "$165k – $210k", matchPercent: 65, tags: ["React", "TypeScript", "Security"] },
-  { id: "22", title: "Full Stack Developer", company: "Retool", location: "San Francisco, CA", salary: "$150k – $190k", matchPercent: 64, tags: ["React", "Node.js", "PostgreSQL"] },
-  { id: "23", title: "Frontend Engineer", company: "Linear", location: "Remote", salary: "$140k – $180k", matchPercent: 63, tags: ["React", "TypeScript", "Performance"] },
-  { id: "24", title: "Software Engineer, Web", company: "Ramp", location: "New York, NY", salary: "$155k – $200k", matchPercent: 62, tags: ["React", "TypeScript", "Fintech"] },
-  { id: "25", title: "Senior UI Developer", company: "Canva", location: "Remote", salary: "$145k – $185k", matchPercent: 61, tags: ["React", "TypeScript", "Canvas API"] },
-];
-
-const TOTAL_MATCHING_JOBS = 127;
 
 const INITIAL_MESSAGE: Message = {
   id: "1",
@@ -55,12 +27,7 @@ const INITIAL_MESSAGE: Message = {
     "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
 };
 
-type StepId =
-  | "start"
-  | "jobs-shown"
-  | "applied"
-  | "email-sent"
-  | "done";
+type StepId = "start" | "jobs-shown" | "applied" | "email-sent" | "done";
 
 export function ChatLayout() {
   const searchParams = useSearchParams();
@@ -73,8 +40,12 @@ export function ChatLayout() {
   ]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showJobPanel, setShowJobPanel] = useState(false);
-  const [appliedJobs, setAppliedJobs] = useState<Set<string>>(new Set());
-  const [allApplied, setAllApplied] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>(RAW_MOCK_JOBS);
+
+  // Detail sheet & email composer
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
+  const [emailJob, setEmailJob] = useState<Job | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
 
@@ -93,6 +64,67 @@ export function ChatLayout() {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
 
+  // --- Job state helpers ---
+  const updateJob = useCallback((jobId: string, updater: (j: Job) => Job) => {
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? updater(j) : j)));
+  }, []);
+
+  const handleApplySingle = useCallback(
+    (jobId: string) => {
+      updateJob(jobId, (j) => ({
+        ...j,
+        status: {
+          ...j.status,
+          applied: true,
+          appliedAt: "just now",
+        },
+      }));
+    },
+    [updateJob]
+  );
+
+  const handleSave = useCallback(
+    (jobId: string) => {
+      updateJob(jobId, (j) => ({
+        ...j,
+        status: { ...j.status, saved: !j.status.saved },
+      }));
+    },
+    [updateJob]
+  );
+
+  const handleEmailSingle = useCallback(
+    (jobId: string) => {
+      updateJob(jobId, (j) => ({
+        ...j,
+        status: {
+          ...j.status,
+          emailSent: true,
+          emailSentAt: "just now",
+        },
+      }));
+    },
+    [updateJob]
+  );
+
+  const handleViewDetail = useCallback((job: Job) => {
+    setDetailJob(job);
+  }, []);
+
+  const handleOpenEmail = useCallback((job: Job) => {
+    setEmailJob(job);
+  }, []);
+
+  // Keep detail sheet in sync with job state changes
+  useEffect(() => {
+    if (detailJob) {
+      const updated = jobs.find((j) => j.id === detailJob.id);
+      if (updated) setDetailJob(updated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs]);
+
+  // --- Bot messaging ---
   const addBotMessage = useCallback(
     async (content: string, extra?: Partial<Message>, delay = 1500) => {
       setIsTyping(true);
@@ -111,16 +143,17 @@ export function ChatLayout() {
     []
   );
 
-  const handleApplySingle = useCallback((jobId: string) => {
-    setAppliedJobs((prev) => new Set(prev).add(jobId));
-  }, []);
-
   const handleApplyAll = useCallback(async () => {
-    setAllApplied(true);
-    setAppliedJobs(new Set(MOCK_JOBS.map((j) => j.id)));
+    const count = jobs.length;
+    setJobs((prev) =>
+      prev.map((j) => ({
+        ...j,
+        status: { ...j.status, applied: true, appliedAt: "just now" },
+      }))
+    );
     setSuggestions([]);
     await addBotMessage(
-      "Applying to all 25 jobs... I'm tailoring your resume for each position to maximize your chances."
+      `Applying to all ${count} jobs... I'm tailoring your resume for each position to maximize your chances.`
     );
     await addBotMessage(
       "Here's a preview of how I adapted your resume for the top match:",
@@ -128,10 +161,8 @@ export function ChatLayout() {
       1500
     );
     await addBotMessage(
-      "All done! I've submitted 25 tailored applications.",
-      {
-        customComponent: <ApplicationStatusCard jobCount={25} />,
-      },
+      `All done! I've submitted ${count} tailored applications.`,
+      { customComponent: <ApplicationStatusCard jobCount={count} /> },
       1500
     );
     await addBotMessage(
@@ -142,18 +173,25 @@ export function ChatLayout() {
       "Yes, email all hiring managers",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage]);
+  }, [addBotMessage, jobs.length]);
 
-  const handleEmailSend = useCallback(async () => {
+  const handleEmailAll = useCallback(async () => {
+    const count = jobs.length;
+    setJobs((prev) =>
+      prev.map((j) => ({
+        ...j,
+        status: { ...j.status, emailSent: true, emailSentAt: "just now" },
+      }))
+    );
     setSuggestions([]);
     await addBotMessage(
-      "Sending personalized emails to hiring managers at all 25 companies..."
+      `Sending personalized emails to hiring managers at all ${count} companies...`
     );
     await addBotMessage(
       "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
       {
         customComponent: (
-          <ApplicationStatusCard jobCount={25} emailsSent={true} />
+          <ApplicationStatusCard jobCount={count} emailsSent={true} />
         ),
       },
       2000
@@ -163,7 +201,7 @@ export function ChatLayout() {
     );
     setStep("email-sent");
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
-  }, [addBotMessage]);
+  }, [addBotMessage, jobs.length]);
 
   const handleUserMessage = useCallback(
     async (content: string) => {
@@ -181,20 +219,19 @@ export function ChatLayout() {
         await addBotMessage(
           "Thanks! I'm parsing your resume and matching you with relevant positions..."
         );
-        // Open the right panel on desktop
         setShowJobPanel(true);
         await addBotMessage(
-          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! I'm showing the top 25 sorted by relevance. You can browse them all, apply individually, or let me apply to all of them at once.`,
+          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! I'm showing the top ${jobs.length} sorted by relevance. You can browse them all, apply individually, or let me apply to all of them at once.`,
           {
-            // Mobile: show expandable job list inline
             customComponent: (
               <JobListings
-                jobs={MOCK_JOBS}
+                jobs={jobs}
                 totalJobs={TOTAL_MATCHING_JOBS}
                 onApply={handleApplySingle}
                 onApplyAll={handleApplyAll}
-                appliedJobs={appliedJobs}
-                allApplied={allApplied}
+                onViewDetail={handleViewDetail}
+                onSave={handleSave}
+                onEmailHM={handleOpenEmail}
               />
             ),
           },
@@ -208,7 +245,7 @@ export function ChatLayout() {
       } else if (step === "jobs-shown") {
         await handleApplyAll();
       } else if (step === "applied") {
-        await handleEmailSend();
+        await handleEmailAll();
       } else if (step === "email-sent" || step === "done") {
         await addBotMessage(
           "I'm on it! I'll keep monitoring new job postings. Whenever a new job matches your profile, I'll send you an email so you can decide if you'd like me to apply. You'll never miss an opportunity!"
@@ -218,7 +255,7 @@ export function ChatLayout() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isTyping, step, addBotMessage, handleApplyAll, handleEmailSend, handleApplySingle]
+    [isTyping, step, addBotMessage, jobs, handleApplyAll, handleEmailAll, handleApplySingle, handleSave, handleViewDetail, handleOpenEmail]
   );
 
   // Handle initial query from homepage
@@ -251,7 +288,7 @@ export function ChatLayout() {
         <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold">
-              P
+              N
             </div>
             <span className="font-semibold text-sm">PitchMeAI</span>
           </div>
@@ -259,38 +296,12 @@ export function ChatLayout() {
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
         <div className="p-3">
           <button className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M5 12h14" />
-              <path d="M12 5v14" />
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
             New Conversation
           </button>
         </div>
@@ -312,32 +323,16 @@ export function ChatLayout() {
 
       {/* Main Chat Area */}
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Chat Header */}
         <div className="flex h-14 items-center gap-3 border-b border-border/50 px-4">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="4" x2="20" y1="12" y2="12" />
-              <line x1="4" x2="20" y1="6" y2="6" />
-              <line x1="4" x2="20" y1="18" y2="18" />
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>
           </button>
           <h1 className="text-sm font-medium truncate flex-1">
             Job Search — Frontend Engineer
           </h1>
-          {/* Toggle job panel on desktop when hidden */}
           {!showJobPanel && step !== "start" && (
             <Button
               variant="outline"
@@ -345,28 +340,12 @@ export function ChatLayout() {
               className="hidden lg:flex text-xs h-7 gap-1.5"
               onClick={() => setShowJobPanel(true)}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect width="7" height="7" x="14" y="3" rx="1" />
-                <rect width="7" height="7" x="14" y="14" rx="1" />
-                <rect width="7" height="7" x="3" y="14" rx="1" />
-                <rect width="7" height="7" x="3" y="3" rx="1" />
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /><rect width="7" height="7" x="3" y="3" rx="1" /></svg>
               Show Jobs
             </Button>
           )}
         </div>
 
-        {/* Messages */}
         <ScrollArea className="flex-1" ref={scrollRef}>
           <div className="mx-auto max-w-2xl space-y-4 p-4">
             {messages.map((msg) => (
@@ -374,18 +353,12 @@ export function ChatLayout() {
             ))}
             {isTyping && (
               <ChatMessage
-                message={{
-                  id: "typing",
-                  role: "bot",
-                  content: "",
-                  isTyping: true,
-                }}
+                message={{ id: "typing", role: "bot", content: "", isTyping: true }}
               />
             )}
           </div>
         </ScrollArea>
 
-        {/* Input */}
         <div className="mx-auto w-full max-w-2xl">
           <ChatInput
             onSend={handleUserMessage}
@@ -395,18 +368,37 @@ export function ChatLayout() {
         </div>
       </div>
 
-      {/* Right Panel — Job Listings (desktop only) */}
+      {/* Right Panel — Job Listings (desktop) */}
       {showJobPanel && (
         <JobPanel
-          jobs={MOCK_JOBS}
+          jobs={jobs}
           totalJobs={TOTAL_MATCHING_JOBS}
           onApply={handleApplySingle}
           onApplyAll={handleApplyAll}
-          appliedJobs={appliedJobs}
-          allApplied={allApplied}
+          onViewDetail={handleViewDetail}
+          onSave={handleSave}
+          onEmailHM={handleOpenEmail}
           onClose={() => setShowJobPanel(false)}
         />
       )}
+
+      {/* Job detail slide-over */}
+      <JobDetailSheet
+        job={detailJob}
+        open={!!detailJob}
+        onClose={() => setDetailJob(null)}
+        onApply={handleApplySingle}
+        onEmailHM={handleOpenEmail}
+        onSave={handleSave}
+      />
+
+      {/* Email composer dialog */}
+      <EmailComposer
+        job={emailJob}
+        open={!!emailJob}
+        onClose={() => setEmailJob(null)}
+        onSend={handleEmailSingle}
+      />
     </div>
   );
 }
