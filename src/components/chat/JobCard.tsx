@@ -1,7 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Job } from "./jobData";
 
 const LOGO_COLORS: Record<string, string> = {
@@ -22,6 +28,7 @@ interface JobCardProps {
   onViewDetail: (job: Job) => void;
   onSave: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
+  onRemoveJob?: (jobId: string, mode: "single" | "title" | "location") => void;
   compact?: boolean;
 }
 
@@ -31,17 +38,20 @@ export function JobCard({
   onViewDetail,
   onSave,
   onEmailHM,
+  onRemoveJob,
   compact,
 }: JobCardProps) {
   const logoColor = LOGO_COLORS[job.company] || "bg-gray-600";
   const initial = job.company.charAt(0);
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // Don't open detail if user clicked a button or interactive element
     const target = e.target as HTMLElement;
-    if (target.closest("button")) return;
+    if (target.closest("button") || target.closest("[data-radix-popover-content]")) return;
     onViewDetail(job);
   };
+
+  const locationCity = job.location.split(",")[0].trim();
 
   return (
     <div
@@ -71,6 +81,45 @@ export function JobCard({
             </div>
 
             <div className="flex items-center gap-0.5 shrink-0">
+              {/* Remove */}
+              {onRemoveJob && (
+                <Popover open={removeOpen} onOpenChange={setRemoveOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); }}
+                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      title="Remove job"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-56 p-1.5"
+                    align="end"
+                    side="bottom"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => { onRemoveJob(job.id, "single"); setRemoveOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                      Remove this one
+                    </button>
+                    <button
+                      onClick={() => { onRemoveJob(job.id, "title"); setRemoveOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                      Remove all &ldquo;{job.title}&rdquo; jobs
+                    </button>
+                    <button
+                      onClick={() => { onRemoveJob(job.id, "location"); setRemoveOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                      Remove all {locationCity} jobs
+                    </button>
+                  </PopoverContent>
+                </Popover>
+              )}
               {/* Save */}
               <button
                 onClick={(e) => { e.stopPropagation(); onSave(job.id); }}

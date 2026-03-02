@@ -115,6 +115,20 @@ export function ChatLayout() {
     setEmailJob(job);
   }, []);
 
+  const handleRemoveJob = useCallback(
+    (jobId: string, mode: "single" | "title" | "location") => {
+      setJobs((prev) => {
+        const target = prev.find((j) => j.id === jobId);
+        if (!target) return prev;
+        if (mode === "single") return prev.filter((j) => j.id !== jobId);
+        if (mode === "title") return prev.filter((j) => j.title !== target.title);
+        if (mode === "location") return prev.filter((j) => j.location !== target.location);
+        return prev;
+      });
+    },
+    []
+  );
+
   // Keep detail sheet in sync with job state changes
   useEffect(() => {
     if (detailJob) {
@@ -232,6 +246,7 @@ export function ChatLayout() {
                 onViewDetail={handleViewDetail}
                 onSave={handleSave}
                 onEmailHM={handleOpenEmail}
+                onRemoveJob={handleRemoveJob}
               />
             ),
           },
@@ -256,7 +271,7 @@ export function ChatLayout() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isTyping, step, addBotMessage, jobs, handleApplyAll, handleEmailAll, handleApplySingle, handleSave, handleViewDetail, handleOpenEmail]
+    [isTyping, step, addBotMessage, jobs, handleApplyAll, handleEmailAll, handleApplySingle, handleSave, handleViewDetail, handleOpenEmail, handleRemoveJob]
   );
 
   // Handle initial query from homepage
@@ -287,12 +302,7 @@ export function ChatLayout() {
         }`}
       >
         <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold">
-              N
-            </div>
-            <span className="font-semibold text-sm">PitchMeAI</span>
-          </div>
+          <span className="font-semibold text-sm">PitchMeAI</span>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
@@ -300,26 +310,39 @@ export function ChatLayout() {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
-        <div className="p-3">
-          <button className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-            New Conversation
-          </button>
+        <div className="flex flex-1 flex-col">
+          <div className="p-3">
+            <button className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+              New Conversation
+            </button>
+          </div>
+          <nav className="px-3 space-y-1 flex-1">
+            {MOCK_CONVERSATIONS.map((convo) => (
+              <div
+                key={convo.id}
+                className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  convo.active
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                }`}
+              >
+                {convo.title}
+              </div>
+            ))}
+          </nav>
+          {/* Bottom links */}
+          <div className="border-t border-border/50 p-3 space-y-1">
+            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2" /><line x1="8" x2="16" y1="21" y2="21" /><line x1="12" x2="12" y1="17" y2="21" /></svg>
+              My Applications
+            </button>
+            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
+              Settings
+            </button>
+          </div>
         </div>
-        <nav className="px-3 space-y-1">
-          {MOCK_CONVERSATIONS.map((convo) => (
-            <div
-              key={convo.id}
-              className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors ${
-                convo.active
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              }`}
-            >
-              {convo.title}
-            </div>
-          ))}
-        </nav>
       </aside>
 
       {/* Main Chat Area */}
@@ -379,6 +402,7 @@ export function ChatLayout() {
           onViewDetail={handleViewDetail}
           onSave={handleSave}
           onEmailHM={handleOpenEmail}
+          onRemoveJob={handleRemoveJob}
           onClose={() => setShowJobPanel(false)}
         />
       )}

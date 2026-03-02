@@ -13,6 +13,7 @@ interface JobListingsProps {
   onViewDetail: (job: Job) => void;
   onSave: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
+  onRemoveJob?: (jobId: string, mode: "single" | "title" | "location") => void;
 }
 
 export function JobListings({
@@ -23,6 +24,7 @@ export function JobListings({
   onViewDetail,
   onSave,
   onEmailHM,
+  onRemoveJob,
 }: JobListingsProps) {
   const [visibleCount, setVisibleCount] = useState(3);
   const allApplied = jobs.every((j) => j.status.applied);
@@ -54,6 +56,7 @@ export function JobListings({
             onViewDetail={onViewDetail}
             onSave={onSave}
             onEmailHM={onEmailHM}
+            onRemoveJob={onRemoveJob}
           />
         ))}
       </div>

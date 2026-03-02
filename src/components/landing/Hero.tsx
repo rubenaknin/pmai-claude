@@ -11,6 +11,17 @@ const PLACEHOLDERS = [
   "Email hiring managers at top tech companies...",
 ];
 
+const COMPANIES = [
+  "Google",
+  "Meta",
+  "Stripe",
+  "Airbnb",
+  "Notion",
+  "Vercel",
+  "Netflix",
+  "Shopify",
+];
+
 export function Hero() {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [displayedPlaceholder, setDisplayedPlaceholder] = useState("");
@@ -62,56 +73,108 @@ export function Hero() {
   };
 
   return (
-    <section className="relative overflow-hidden px-6 py-20 sm:py-28 lg:px-8">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(45%_40%_at_50%_60%,var(--color-primary)/5%,transparent)]" />
-      <div className="mx-auto max-w-3xl text-center">
-        <div className="mb-6 flex justify-center">
-          <div className="relative rounded-full px-3 py-1 text-sm text-muted-foreground ring-1 ring-border">
-            AI-powered job applications — now in beta
-          </div>
+    <section className="relative overflow-hidden px-6 pt-20 pb-16 sm:pt-32 sm:pb-24 lg:px-8">
+      {/* Animated gradient orbs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 h-[600px] w-[600px] rounded-full bg-emerald-100/60 blur-[120px] animate-float-slow" />
+        <div className="absolute top-20 -right-60 h-[500px] w-[500px] rounded-full bg-teal-100/50 blur-[120px] animate-float-medium" />
+        <div className="absolute -bottom-40 left-1/4 h-[450px] w-[450px] rounded-full bg-cyan-50/50 blur-[100px] animate-float-fast" />
+        <div className="absolute top-1/2 right-1/4 h-[300px] w-[300px] rounded-full bg-emerald-50/40 blur-[80px] animate-float-medium" />
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 mx-auto max-w-3xl text-center">
+        {/* Badge */}
+        <div
+          className="animate-fade-in-up mb-8 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-sm text-emerald-700 ring-1 ring-emerald-200/60"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          AI-powered job applications — now in beta
         </div>
-        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-          Your AI Job Application Assistant
+
+        {/* Headline */}
+        <h1
+          className="animate-fade-in-up text-5xl font-bold tracking-tight leading-[1.1] text-gray-900 sm:text-7xl"
+          style={{ animationDelay: "100ms" }}
+        >
+          Your AI Job Application{" "}
+          <span className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent">
+            Assistant
+          </span>
         </h1>
-        <p className="mt-5 text-lg leading-8 text-muted-foreground">
+
+        {/* Subtitle */}
+        <p
+          className="animate-fade-in-up mt-6 text-lg leading-relaxed text-gray-500 sm:text-xl max-w-2xl mx-auto"
+          style={{ animationDelay: "200ms" }}
+        >
           Upload your resume, and PitchMeAI finds matching jobs, tailors your
           resume for each one, applies, and emails hiring managers — all
           automatically.
         </p>
 
-        {/* Chat-style window — single frame */}
-        <form onSubmit={handleSubmit} className="mt-10 mx-auto max-w-2xl">
-          <div className="rounded-2xl border border-border bg-background shadow-xl overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-2 border-b border-border/50 px-5 py-3">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
-                N
-              </div>
-              <span className="text-xs font-medium text-muted-foreground">
-                Nikki, your assistant
-              </span>
-            </div>
+        {/* Chat window */}
+        <div
+          className="animate-fade-in-up mt-12 mx-auto max-w-2xl"
+          style={{ animationDelay: "400ms" }}
+        >
+          <form onSubmit={handleSubmit} className="relative">
+            {/* Glow behind the card */}
+            <div className="absolute -inset-4 rounded-3xl bg-gradient-to-r from-emerald-400/20 via-teal-400/15 to-cyan-400/20 blur-2xl animate-glow-pulse" />
 
-            {/* Input + resume hint in one section */}
-            <div className="px-4 pt-4 pb-3">
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={inputRef}
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={displayedPlaceholder}
-                  rows={2}
-                  className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 sm:text-base leading-relaxed"
-                />
-                <button
-                  type="submit"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
-                >
+            {/* Card */}
+            <div className="relative rounded-2xl border border-gray-200/80 bg-white/80 backdrop-blur-xl shadow-2xl shadow-gray-200/60 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2.5 border-b border-gray-100 px-5 py-3">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-white text-[11px] font-bold shadow-sm">
+                  N
+                </div>
+                <span className="text-sm font-medium text-gray-500">
+                  Nikki, your assistant
+                </span>
+              </div>
+
+              {/* Input area */}
+              <div className="px-5 pt-4 pb-3">
+                <div className="flex items-end gap-3">
+                  <textarea
+                    ref={inputRef}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={displayedPlaceholder}
+                    rows={2}
+                    className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-gray-400/70 sm:text-base leading-relaxed"
+                  />
+                  <button
+                    type="submit"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white transition-all hover:bg-emerald-600 hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+                      <path d="m21.854 2.147-10.94 10.939" />
+                    </svg>
+                  </button>
+                </div>
+                {/* Resume hint */}
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    width="18"
-                    height="18"
+                    width="14"
+                    height="14"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -119,35 +182,42 @@ export function Hero() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
-                    <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
-                    <path d="m21.854 2.147-10.94 10.939" />
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                   </svg>
-                </button>
-              </div>
-              {/* Resume hint at bottom */}
-              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
-                <span>Recommended: drop your resume here</span>
+                  <span>Recommended: drop your resume here</span>
+                </div>
               </div>
             </div>
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Type a message or upload your resume to start — you&apos;ll be taken
-            to the full chat experience
+          </form>
+        </div>
+
+        <p
+          className="animate-fade-in-up mt-4 text-xs text-gray-400"
+          style={{ animationDelay: "500ms" }}
+        >
+          Type a message or upload your resume to start — you&apos;ll be taken
+          to the full chat experience
+        </p>
+
+        {/* Social proof */}
+        <div
+          className="animate-fade-in-up mt-20 flex flex-col items-center gap-5"
+          style={{ animationDelay: "700ms" }}
+        >
+          <p className="text-xs uppercase tracking-widest text-gray-400 font-medium">
+            Our users have landed roles at
           </p>
-        </form>
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+            {COMPANIES.map((name) => (
+              <span
+                key={name}
+                className="text-sm font-semibold text-gray-300 tracking-wide"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );

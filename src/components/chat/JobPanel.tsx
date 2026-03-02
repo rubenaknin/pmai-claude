@@ -23,6 +23,7 @@ interface JobPanelProps {
   onViewDetail: (job: Job) => void;
   onSave: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
+  onRemoveJob: (jobId: string, mode: "single" | "title" | "location") => void;
   onClose: () => void;
 }
 
@@ -34,6 +35,7 @@ export function JobPanel({
   onViewDetail,
   onSave,
   onEmailHM,
+  onRemoveJob,
   onClose,
 }: JobPanelProps) {
   const [sort, setSort] = useState<SortOption>("relevance");
@@ -108,8 +110,9 @@ export function JobPanel({
             <button
               onClick={onClose}
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Hide panel"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M15 3v18" /><path d="m10 15 3-3-3-3" /></svg>
             </button>
           </div>
         </div>
@@ -150,6 +153,7 @@ export function JobPanel({
               onViewDetail={onViewDetail}
               onSave={onSave}
               onEmailHM={onEmailHM}
+              onRemoveJob={onRemoveJob}
               compact
             />
           ))}
