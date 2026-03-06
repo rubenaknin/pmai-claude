@@ -73,9 +73,12 @@ interface ChatJobCardProps {
   onApply: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
   onViewDetail: (job: Job) => void;
+  onMatchResume: (job: Job) => void;
+  matchingJobId?: string | null;
 }
 
-export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail }: ChatJobCardProps) {
+export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResume, matchingJobId }: ChatJobCardProps) {
+  const isMatching = matchingJobId === job.id;
   return (
     <div
       onClick={() => onViewDetail(job)}
@@ -120,7 +123,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail }: ChatJobCa
           <div className="border-t border-border/30 my-2" />
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
               variant={job.status.applied ? "secondary" : "default"}
@@ -129,6 +132,25 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail }: ChatJobCa
               disabled={job.status.applied}
             >
               {job.status.applied ? "Applied" : "Apply for me"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7"
+              onClick={(e) => { e.stopPropagation(); onMatchResume(job); }}
+              disabled={isMatching}
+            >
+              {isMatching ? (
+                <span className="flex items-center gap-1">
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                  Matching...
+                </span>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+                  Match my resume
+                </>
+              )}
             </Button>
             <Button
               size="sm"

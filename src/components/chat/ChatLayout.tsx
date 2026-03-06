@@ -66,6 +66,7 @@ export function ChatLayout() {
 
   // Resume preview data
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
@@ -325,6 +326,70 @@ export function ChatLayout() {
     []
   );
 
+  // --- Match my resume ---
+  const handleMatchResume = useCallback(
+    async (job: Job) => {
+      if (!job._apiData?.url || !job._apiData?.jobId) return;
+      setMatchingJobId(job.id);
+
+      try {
+        const res = await fetch("/api/resume/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: job._apiData.url,
+            jobId: job._apiData.jobId,
+            jobName: job._apiData.jobName || job.title,
+            companyName: job._apiData.companyName || job.company,
+            jobDetails: job._apiData.jobDetails || job.description,
+            location: job._apiData.location || job.location,
+          }),
+        });
+        const data = await res.json();
+        if (data.html) {
+          setResumeData({
+            html: data.html,
+            highlights: [],
+            pdfFileName: data.pdfFileName,
+            jobTitle: job.title,
+            company: job.company,
+            threeExplanations: data.threeExplanations,
+          });
+          addBotMessage(
+            `Here's your resume tailored for ${job.title} at ${job.company}:`,
+            {
+              customComponent: (
+                <ResumePreviewCard
+                  jobTitle={job.title}
+                  company={job.company}
+                  highlights={
+                    data.threeExplanations
+                      ? [
+                          data.threeExplanations.summary,
+                          data.threeExplanations.keywords_added?.length
+                            ? `Keywords added: ${data.threeExplanations.keywords_added.join(", ")}`
+                            : undefined,
+                          data.threeExplanations.soft_skills
+                            ? `Soft skills: ${data.threeExplanations.soft_skills}`
+                            : undefined,
+                        ].filter(Boolean) as string[]
+                      : undefined
+                  }
+                />
+              ),
+            }
+          );
+        }
+      } catch (err) {
+        console.error("Match resume failed:", err);
+        addBotMessage("Sorry, I couldn't generate the tailored resume. Please try again.");
+      } finally {
+        setMatchingJobId(null);
+      }
+    },
+    [addBotMessage]
+  );
+
   // --- Apply all ---
   const handleApplyAll = useCallback(async () => {
     const count = jobs.length;
@@ -532,6 +597,8 @@ export function ChatLayout() {
                       onApply={handleApplySingle}
                       onEmailHM={handleOpenEmail}
                       onViewDetail={handleViewDetail}
+                      onMatchResume={handleMatchResume}
+                      matchingJobId={matchingJobId}
                     />
                   ),
                 }, debugInfo);
