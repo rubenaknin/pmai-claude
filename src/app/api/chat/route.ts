@@ -5,7 +5,7 @@ import type { ChatRequest } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequest;
-    const { message, history = [], jobsContext } = body;
+    const { message, history = [], jobsContext, userStatus } = body;
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       req.headers.get("x-real-ip") ||
       undefined;
 
-    const result = await processChat(message, history, jobsContext, userIp);
+    const result = await processChat(message, history, jobsContext, userIp, userStatus);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -10,6 +10,7 @@ export interface ChatRequest {
   history: ChatHistoryMessage[];
   jobsContext?: string; // serialized summary of current jobs for Claude context
   userIp?: string; // for geolocation fallback
+  userStatus?: UserStatusResponse; // user profile data for personalized responses
 }
 
 export interface UserProfile {

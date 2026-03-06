@@ -20,13 +20,14 @@ import type {
   ChatApiResponse,
   ActionType,
   DebugInfo,
+  UserStatusResponse,
 } from "./types";
 
 const anthropic = new Anthropic();
 
 const MODEL = "claude-sonnet-4-5-20250929";
 
-function buildSystemPrompt(userIp?: string): string {
+function buildSystemPrompt(userIp?: string, userStatus?: UserStatusResponse, isFirstMessage?: boolean): string {
   let prompt = `You are Nikki, PitchMeAI's friendly and efficient job application assistant.
 
 Your capabilities:
@@ -63,6 +64,47 @@ Guidelines:
 - Never make up job listings — only show real results from the search tool
 - When no tool is needed (general questions, chitchat), just respond naturally`;
 
+  // Inject user profile context
+  if (userStatus) {
+    const parts: string[] = [];
+    if (userStatus.isLoggedIn) parts.push("User is logged in.");
+    if (userStatus.userFirstName) parts.push(`First name: ${userStatus.userFirstName}.`);
+    if (userStatus.hasResume) parts.push("User has uploaded a resume.");
+    if (userStatus.dynamicTitle) parts.push(`Job title from profile: ${userStatus.dynamicTitle}.`);
+    if (userStatus.dynamicLocation) parts.push(`Location from profile: ${userStatus.dynamicLocation}.`);
+    if (parts.length > 0) {
+      prompt += `\n\nUSER PROFILE:\n${parts.join(" ")}`;
+    }
+  }
+
+  // First-message behavior rules
+  if (isFirstMessage) {
+    prompt += `\n\nFIRST MESSAGE RULES (this is the user's very first message — there is no prior greeting):`;
+
+    if (userStatus?.isLoggedIn && userStatus?.hasResume && userStatus?.dynamicTitle) {
+      const title = userStatus.dynamicTitle;
+      prompt += `
+- The user has a resume and their profile title is "${title}".
+- If they ask to find jobs (with or without a location), confirm by asking if they want ${title} roles specifically. Example: "Sure! Should I look for ${title} roles in [location]?"
+- If they explicitly specify a different role, search for that role instead.
+- Use their first name if available.
+- Do NOT search immediately on the first message — ask to confirm the role first, then search on their confirmation.`;
+    } else if (userStatus?.isLoggedIn) {
+      prompt += `
+- The user is logged in but does NOT have a resume or known job title.
+- Ask them to upload their resume so you can find the best matches. If they don't want to, ask what type of role they're looking for.
+- Example: "Sure! What type of role should I look for? You can also upload your resume so I can find the best matches for you."
+- Use their first name if available.
+- Do NOT search immediately — you need a role or resume first.`;
+    } else {
+      prompt += `
+- The user is NOT logged in and has no resume.
+- Ask them to upload their resume or specify what type of role they're looking for.
+- Example: "Sure! What kind of roles are you looking for? You can also upload your resume so I can find the best matches."
+- Do NOT search immediately — you need a role or resume first.`;
+    }
+  }
+
   if (userIp) {
     prompt += `\n\nUser's IP address (for approximate geolocation if no location specified): ${userIp}`;
   }
@@ -74,7 +116,8 @@ export async function processChat(
   userMessage: string,
   history: ChatHistoryMessage[],
   jobsContext?: string,
-  userIp?: string
+  userIp?: string,
+  userStatus?: UserStatusResponse
 ): Promise<ChatApiResponse> {
   // Reset per-request state
   resetNetworkLogs();
@@ -91,7 +134,8 @@ export async function processChat(
     content: m.content,
   }));
 
-  let systemPrompt = buildSystemPrompt(userIp);
+  const isFirstMessage = history.length === 0;
+  let systemPrompt = buildSystemPrompt(userIp, userStatus, isFirstMessage);
   if (jobsContext) {
     systemPrompt += `\n\nCurrent jobs the user is looking at:\n${jobsContext}`;
   }

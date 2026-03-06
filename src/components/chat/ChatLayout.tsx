@@ -26,14 +26,17 @@ export function ChatLayout() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([
+    "Find me jobs",
+    "Here's my resume — find jobs for me",
+  ]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
 
-  // Initialization state
-  const [initLoading, setInitLoading] = useState(true);
+  // User status (fetched silently on mount)
+  const [userStatus, setUserStatus] = useState<UserStatusResponse | null>(null);
   const initDone = useRef(false);
 
   // Detail sheet & email composer
@@ -63,73 +66,35 @@ export function ChatLayout() {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
 
-  // --- Smart initialization ---
+  // --- Fetch user status silently on mount (no greeting) ---
   useEffect(() => {
     if (initDone.current) return;
     initDone.current = true;
 
-    setIsTyping(true);
-
     fetch("/api/user/status")
       .then((res) => res.json())
       .then((data: UserStatusResponse) => {
-        let greeting: string;
-        let initSuggestions: string[];
-
-        if (data.isLoggedIn && data.hasResume && data.dynamicTitle) {
-          const name = data.userFirstName || "there";
-          const title = data.dynamicTitle;
-          const location = data.dynamicLocation;
-          greeting = location
-            ? `Hi ${name}! I see you're looking for ${title} roles in ${location}. Want me to search for matching jobs?`
-            : `Hi ${name}! I see you're looking for ${title} roles. Want me to search for matching jobs?`;
-          initSuggestions = [
-            `Yes, find ${title} jobs${location ? ` in ${location}` : ""}`,
-            "Something else",
-          ];
-        } else if (data.isLoggedIn) {
-          const name = data.userFirstName || "there";
-          greeting = `Hi ${name}! Upload your resume or tell me what role you're looking for, and I'll find matching jobs for you.`;
-          initSuggestions = [
-            "Here's my resume — find jobs for me",
-            "I'm looking for frontend engineer roles",
-            "I'm looking for product manager roles",
-          ];
-        } else {
-          greeting =
-            "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.";
-          initSuggestions = [
-            "Here's my resume — find jobs for me",
-            "I'm looking for frontend engineer roles",
-          ];
-        }
-
-        const botMsg: Message = {
-          id: "init-greeting",
-          role: "bot",
-          content: greeting,
-        };
-        setMessages([botMsg]);
-        setSuggestions(initSuggestions);
+        setUserStatus(data);
       })
       .catch(() => {
-        // Fallback to generic greeting
-        const botMsg: Message = {
-          id: "init-greeting",
-          role: "bot",
-          content:
-            "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
-        };
-        setMessages([botMsg]);
-        setSuggestions([
-          "Here's my resume — find jobs for me",
-          "I'm looking for frontend engineer roles",
-        ]);
-      })
-      .finally(() => {
-        setIsTyping(false);
-        setInitLoading(false);
+        setUserStatus({ isLoggedIn: false });
       });
+  }, []);
+
+  // --- New Conversation handler ---
+  const handleNewConversation = useCallback(() => {
+    setMessages([]);
+    setChatHistory([]);
+    setSuggestions(["Find me jobs", "Here's my resume — find jobs for me"]);
+    setJobs([]);
+    setTotalJobs(0);
+    setShowJobPanel(false);
+    setDetailJob(null);
+    setEmailJob(null);
+    setEmailData(null);
+    setResumeData(null);
+    setIsTyping(false);
+    initialQueryHandled.current = false;
   }, []);
 
   // --- Job state helpers ---
@@ -437,7 +402,7 @@ export function ChatLayout() {
         return;
       }
 
-      // Call the chat API
+      // Call the chat API — pass user status for personalized responses
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -446,6 +411,7 @@ export function ChatLayout() {
             message: content,
             history: chatHistory,
             jobsContext: buildJobsContext(),
+            userStatus: userStatus || undefined,
           }),
         });
 
@@ -581,23 +547,24 @@ export function ChatLayout() {
       handleViewDetail,
       handleOpenEmail,
       handleRemoveJob,
+      userStatus,
     ]
   );
 
-  // Handle initial query from homepage — wait until init completes
+  // Handle initial query from homepage
   useEffect(() => {
-    if (initLoading) return;
     if (initialQueryHandled.current) return;
+    if (!userStatus) return; // wait until user status is loaded
     const q = searchParams.get("q");
     if (q) {
       initialQueryHandled.current = true;
-      setTimeout(() => handleUserMessage(q), 500);
+      setTimeout(() => handleUserMessage(q), 300);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, initLoading]);
+  }, [searchParams, userStatus]);
 
   return (
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -608,11 +575,11 @@ export function ChatLayout() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 border-r border-border/50 bg-muted/30 transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border/50 bg-muted/30 transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center justify-between border-b border-border/50 px-4">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-4">
           <span className="font-semibold text-sm">PitchMeAI</span>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -621,14 +588,17 @@ export function ChatLayout() {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
-        <div className="flex flex-1 flex-col">
-          <div className="p-3">
-            <button className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
+        <div className="flex flex-1 flex-col min-h-0">
+          <div className="p-3 shrink-0">
+            <button
+              onClick={handleNewConversation}
+              className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
               New Conversation
             </button>
           </div>
-          <nav className="px-3 space-y-1 flex-1">
+          <nav className="flex-1 overflow-y-auto px-3 space-y-1">
             {MOCK_CONVERSATIONS.map((convo) => (
               <div
                 key={convo.id}
@@ -642,8 +612,8 @@ export function ChatLayout() {
               </div>
             ))}
           </nav>
-          {/* Bottom links */}
-          <div className="border-t border-border/50 p-3 space-y-1">
+          {/* Bottom links — pinned to bottom */}
+          <div className="shrink-0 border-t border-border/50 p-3 space-y-1">
             <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect width="20" height="14" x="2" y="6" rx="2" /></svg>
               My Applications
@@ -657,8 +627,8 @@ export function ChatLayout() {
       </aside>
 
       {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col min-w-0">
-        <div className="flex h-14 items-center gap-3 border-b border-border/50 px-4">
+      <div className="flex flex-1 flex-col min-w-0 min-h-0">
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
@@ -666,7 +636,7 @@ export function ChatLayout() {
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>
           </button>
           <h1 className="text-sm font-medium truncate flex-1">
-            Job Search — Frontend Engineer
+            PitchMeAI
           </h1>
           {!showJobPanel && jobs.length > 0 && (
             <Button
@@ -681,8 +651,25 @@ export function ChatLayout() {
           )}
         </div>
 
-        <ScrollArea className="flex-1" ref={scrollRef}>
+        <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
           <div className="mx-auto max-w-2xl space-y-4 p-4">
+            {/* Empty state — shown when no messages yet */}
+            {messages.length === 0 && !isTyping && (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect width="20" height="14" x="2" y="6" rx="2" /></svg>
+                </div>
+                <h2 className="text-lg font-semibold mb-1">
+                  {userStatus?.userFirstName
+                    ? `Hi ${userStatus.userFirstName}, what can I help you with?`
+                    : "What can I help you with?"}
+                </h2>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Tell me what kind of jobs you're looking for, or upload your resume and I'll find the best matches.
+                </p>
+              </div>
+            )}
+
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
@@ -694,7 +681,7 @@ export function ChatLayout() {
           </div>
         </ScrollArea>
 
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="shrink-0 mx-auto w-full max-w-2xl">
           <ChatInput
             onSend={handleUserMessage}
             disabled={isTyping}
@@ -703,7 +690,7 @@ export function ChatLayout() {
         </div>
       </div>
 
-      {/* Right Panel — Job Listings (desktop) */}
+      {/* Right Panel — Job Listings (desktop, sticky full height) */}
       {showJobPanel && (
         <JobPanel
           jobs={jobs}
