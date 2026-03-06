@@ -496,24 +496,35 @@ export function ChatLayout() {
 
   // --- Match my resume (core — returns result, does NOT post bot messages) ---
   const handleMatchResume = useCallback(
-    async (job: Job): Promise<{ success: boolean; data?: Record<string, unknown> }> => {
-      if (!job._apiData?.url || !job._apiData?.jobId) return { success: false };
+    async (job: Job): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> => {
+      if (!job._apiData?.url || !job._apiData?.jobId) {
+        console.error("Match resume: missing _apiData", { id: job.id, _apiData: job._apiData });
+        return { success: false, error: "Missing job URL or ID" };
+      }
       addMatchingId(job.id);
 
       try {
+        const payload = {
+          url: job._apiData.url,
+          jobId: job._apiData.jobId,
+          jobName: job._apiData.jobName || job.title,
+          companyName: job._apiData.companyName || job.company,
+          jobDetails: job._apiData.jobDetails || job.description,
+          location: job._apiData.location || job.location,
+        };
         const res = await fetch("/api/resume/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: job._apiData.url,
-            jobId: job._apiData.jobId,
-            jobName: job._apiData.jobName || job.title,
-            companyName: job._apiData.companyName || job.company,
-            jobDetails: job._apiData.jobDetails || job.description,
-            location: job._apiData.location || job.location,
-          }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
+
+        if (!res.ok) {
+          const errMsg = data.error || `API error ${res.status}`;
+          console.error("Match resume API error:", errMsg, { status: res.status, payload });
+          return { success: false, error: errMsg };
+        }
+
         if (data.html) {
           setResumeData({
             html: data.html,
@@ -529,10 +540,12 @@ export function ChatLayout() {
           }));
           return { success: true, data };
         }
-        return { success: false };
+        console.error("Match resume: no HTML in response", data);
+        return { success: false, error: "No resume HTML returned" };
       } catch (err) {
-        console.error("Match resume failed:", err);
-        return { success: false };
+        const errMsg = err instanceof Error ? err.message : "Unknown error";
+        console.error("Match resume failed:", errMsg);
+        return { success: false, error: errMsg };
       } finally {
         removeMatchingId(job.id);
       }
@@ -571,7 +584,8 @@ export function ChatLayout() {
           }
         );
       } else if (!result.success) {
-        addBotMessage("Sorry, I couldn't generate the tailored resume. Please try again.");
+        const reason = result.error || "unknown error";
+        addBotMessage(`Sorry, I couldn't generate the tailored resume: ${reason}. Please try again.`);
       }
     },
     [handleMatchResume, addBotMessage]
