@@ -17,7 +17,7 @@ export function NetworkDebugPanel({ debug }: NetworkDebugPanelProps) {
   );
 
   return (
-    <div className="mt-1.5 max-w-sm">
+    <div className="mt-1.5 max-w-2xl">
       <button
         onClick={() => setOpen(!open)}
         className={`flex items-center gap-1.5 text-[10px] font-mono transition-colors ${

@@ -15,11 +15,26 @@ import { ResumePreviewCard } from "./ResumePreviewCard";
 import { Job } from "./jobData";
 import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData, DebugInfo, UserStatusResponse } from "@/lib/types";
 
-const MOCK_CONVERSATIONS = [
-  { id: "1", title: "Job Search — Frontend Engineer", active: true },
-  { id: "2", title: "Resume Review", active: false },
-  { id: "3", title: "Interview Prep — DataDrive", active: false },
-];
+interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  chatHistory: ChatHistoryMessage[];
+  jobs: Job[];
+  totalJobs: number;
+  suggestions: string[];
+}
+
+/** Generate a short title from the first user message */
+function generateTitle(message: string): string {
+  const cleaned = message.trim().replace(/[.!?]+$/, "");
+  // Strip common filler prefixes
+  const stripped = cleaned
+    .replace(/^(hey|hi|hello|please|can you|could you|i want to|i'd like to|i need to)\s+/i, "")
+    .replace(/^(find me|search for|look for|get me)\s+/i, "");
+  const capitalized = stripped.charAt(0).toUpperCase() + stripped.slice(1);
+  return capitalized.length > 40 ? capitalized.slice(0, 37) + "..." : capitalized;
+}
 
 export function ChatLayout() {
   const searchParams = useSearchParams();
@@ -34,6 +49,10 @@ export function ChatLayout() {
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
+
+  // Conversation history
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string>(() => `conv-${Date.now()}`);
 
   // User status (fetched silently on mount)
   const [userStatus, setUserStatus] = useState<UserStatusResponse | null>(null);
@@ -81,8 +100,48 @@ export function ChatLayout() {
       });
   }, []);
 
+  // --- Save current conversation to history ---
+  const saveCurrentConversation = useCallback(() => {
+    if (messages.length === 0) return; // nothing to save
+    setConversations((prev) => {
+      const existing = prev.find((c) => c.id === activeConversationId);
+      const entry: Conversation = {
+        id: activeConversationId,
+        title: existing?.title || "New Conversation",
+        messages,
+        chatHistory,
+        jobs,
+        totalJobs,
+        suggestions,
+      };
+      if (existing) {
+        return prev.map((c) => (c.id === activeConversationId ? entry : c));
+      }
+      return [...prev, entry];
+    });
+  }, [activeConversationId, messages, chatHistory, jobs, totalJobs, suggestions]);
+
+  // --- Load a conversation ---
+  const loadConversation = useCallback((conv: Conversation) => {
+    setActiveConversationId(conv.id);
+    setMessages(conv.messages);
+    setChatHistory(conv.chatHistory);
+    setJobs(conv.jobs);
+    setTotalJobs(conv.totalJobs);
+    setSuggestions(conv.suggestions);
+    setShowJobPanel(conv.jobs.length > 0);
+    setDetailJob(null);
+    setEmailJob(null);
+    setEmailData(null);
+    setResumeData(null);
+    setIsTyping(false);
+  }, []);
+
   // --- New Conversation handler ---
   const handleNewConversation = useCallback(() => {
+    saveCurrentConversation();
+    const newId = `conv-${Date.now()}`;
+    setActiveConversationId(newId);
     setMessages([]);
     setChatHistory([]);
     setSuggestions(["Find me jobs", "Here's my resume — find jobs for me"]);
@@ -95,7 +154,7 @@ export function ChatLayout() {
     setResumeData(null);
     setIsTyping(false);
     initialQueryHandled.current = false;
-  }, []);
+  }, [saveCurrentConversation]);
 
   // --- Job state helpers ---
   const updateJob = useCallback((jobId: string, updater: (j: Job) => Job) => {
@@ -378,9 +437,35 @@ export function ChatLayout() {
         role: "user",
         content,
       };
+      const isFirstMsg = messages.length === 0;
       setMessages((prev) => [...prev, userMsg]);
       setSuggestions([]);
       setIsTyping(true);
+
+      // On first message, create conversation entry with auto-generated title
+      if (isFirstMsg) {
+        const title = generateTitle(content);
+        setConversations((prev) => {
+          const exists = prev.some((c) => c.id === activeConversationId);
+          if (exists) {
+            return prev.map((c) =>
+              c.id === activeConversationId ? { ...c, title } : c
+            );
+          }
+          return [
+            {
+              id: activeConversationId,
+              title,
+              messages: [userMsg],
+              chatHistory: [],
+              jobs: [],
+              totalJobs: 0,
+              suggestions: [],
+            },
+            ...prev,
+          ];
+        });
+      }
 
       // Check for quick intent matches (button-like phrases)
       const lower = content.toLowerCase();
@@ -537,6 +622,8 @@ export function ChatLayout() {
     },
     [
       isTyping,
+      messages,
+      activeConversationId,
       chatHistory,
       buildJobsContext,
       addBotMessage,
@@ -599,11 +686,16 @@ export function ChatLayout() {
             </button>
           </div>
           <nav className="flex-1 overflow-y-auto px-3 space-y-1">
-            {MOCK_CONVERSATIONS.map((convo) => (
+            {conversations.map((convo) => (
               <div
                 key={convo.id}
-                className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors ${
-                  convo.active
+                onClick={() => {
+                  if (convo.id === activeConversationId) return;
+                  saveCurrentConversation();
+                  loadConversation(convo);
+                }}
+                className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors truncate ${
+                  convo.id === activeConversationId
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
@@ -611,6 +703,11 @@ export function ChatLayout() {
                 {convo.title}
               </div>
             ))}
+            {conversations.length === 0 && (
+              <p className="px-3 py-4 text-xs text-muted-foreground/60 text-center">
+                Your conversations will appear here
+              </p>
+            )}
           </nav>
           {/* Bottom links — pinned to bottom */}
           <div className="shrink-0 border-t border-border/50 p-3 space-y-1">
