@@ -93,7 +93,11 @@ Guidelines:
     const parts: string[] = [];
     if (userStatus.isLoggedIn) parts.push("User is logged in.");
     if (userStatus.userFirstName) parts.push(`First name: ${userStatus.userFirstName}.`);
-    if (userStatus.hasResume) parts.push("User has uploaded a resume.");
+    if (userStatus.hasResume) {
+      parts.push("User HAS uploaded a resume — do NOT ask them to upload one. You already have it.");
+    } else {
+      parts.push("User has NOT uploaded a resume yet. You can suggest they upload one.");
+    }
     if (userStatus.dynamicTitle) parts.push(`Job title from profile: ${userStatus.dynamicTitle}.`);
     if (userStatus.dynamicLocation) parts.push(`Location from profile: ${userStatus.dynamicLocation}.`);
     if (parts.length > 0) {
@@ -259,19 +263,24 @@ async function handleFirstMessage(
   }
 
   // ── Case 3: No role, no profile title → ask for details ──
+  const resumeHint = hasResume
+    ? ""
+    : " You can also upload your resume so I can get to know you better.";
+  const resumeSuggestion = hasResume ? [] : ["Upload my resume"];
+
   if (location) {
     return {
-      botMessage: `${greeting} Any specific type of jobs I should look for in ${location}? You can also upload your resume so I can get to know you better.`,
+      botMessage: `${greeting} Any specific type of jobs I should look for in ${location}?${resumeHint}`,
       actionType: "general",
-      suggestions: ["Upload my resume"],
+      suggestions: resumeSuggestion,
       _debug: debug,
     };
   }
 
   return {
-    botMessage: `${greeting} What kind of roles are you looking for? You can also upload your resume so I can get to know you better.`,
+    botMessage: `${greeting} What kind of roles are you looking for?${resumeHint}`,
     actionType: "general",
-    suggestions: ["Upload my resume"],
+    suggestions: resumeSuggestion,
     _debug: debug,
   };
 }
@@ -333,12 +342,16 @@ export async function processChat(
       const toolCalls = response.tool_calls;
       if (!toolCalls || toolCalls.length === 0) {
         // No tool calls — extract final text
-        const text = typeof response.content === "string"
+        let text = typeof response.content === "string"
           ? response.content
           : (response.content as Array<{ type: string; text?: string }>)
               .filter((b) => b.type === "text")
               .map((b) => b.text || "")
               .join("");
+
+        // Strip any XML tool call attempts that Claude may emit as text
+        // (happens when tools aren't bound but Claude still tries to call them)
+        text = text.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/g, "").trim();
 
         debug.networkLogs = getNetworkLogs();
         return {

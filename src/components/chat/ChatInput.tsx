@@ -195,6 +195,7 @@ export function ChatInput({
           placeholder="Type a message..."
           disabled={disabled}
           className="flex-1"
+          autoFocus
         />
         <Button onClick={handleSend} disabled={disabled || !value.trim()}>
           <svg

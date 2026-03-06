@@ -981,10 +981,11 @@ export function ChatLayout() {
     ]
   );
 
-  // Handle initial query from homepage — fire immediately, don't wait for userStatus
+  // Handle initial query from homepage — wait for userStatus so we know resume state
   useEffect(() => {
     if (initialQueryHandled.current) return;
     if (!initialQuery) return;
+    if (userStatus === null) return; // wait for status to load
     initialQueryHandled.current = true;
 
     // The user message is already in state (pre-populated above).
@@ -1082,7 +1083,7 @@ export function ChatLayout() {
 
     fireInitialQuery();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuery]);
+  }, [initialQuery, userStatus]);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
