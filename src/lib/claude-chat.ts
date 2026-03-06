@@ -79,29 +79,30 @@ Guidelines:
 
   // First-message behavior rules
   if (isFirstMessage) {
-    prompt += `\n\nFIRST MESSAGE RULES (this is the user's very first message — there is no prior greeting):`;
+    prompt += `\n\n⚠️ CRITICAL — FIRST MESSAGE RULES (this is the user's very first message — you have NO tools available for this turn):`;
 
     if (userStatus?.isLoggedIn && userStatus?.hasResume && userStatus?.dynamicTitle) {
       const title = userStatus.dynamicTitle;
+      const name = userStatus.userFirstName ? `${userStatus.userFirstName}, ` : "";
       prompt += `
 - The user has a resume and their profile title is "${title}".
-- If they ask to find jobs (with or without a location), confirm by asking if they want ${title} roles specifically. Example: "Sure! Should I look for ${title} roles in [location]?"
-- If they explicitly specify a different role, search for that role instead.
-- Use their first name if available.
-- Do NOT search immediately on the first message — ask to confirm the role first, then search on their confirmation.`;
+- You MUST reply with a short confirmation question. Do NOT search. You have no tools right now.
+- If they ask to find jobs (with or without a location), ask: "Sure${name ? `, ${userStatus.userFirstName}` : ""}! Should I look for ${title} roles in [their location if mentioned]?"
+- If they explicitly specify a different role (e.g. "find me marketing jobs"), confirm that role instead.
+- Keep your reply to 1-2 sentences max. Just ask the confirmation question.`;
     } else if (userStatus?.isLoggedIn) {
+      const name = userStatus.userFirstName ? ` ${userStatus.userFirstName}` : "";
       prompt += `
 - The user is logged in but does NOT have a resume or known job title.
-- Ask them to upload their resume so you can find the best matches. If they don't want to, ask what type of role they're looking for.
-- Example: "Sure! What type of role should I look for? You can also upload your resume so I can find the best matches for you."
-- Use their first name if available.
-- Do NOT search immediately — you need a role or resume first.`;
+- You MUST ask what role they want OR suggest uploading a resume. Do NOT search. You have no tools right now.
+- Example: "Hey${name}! What type of role should I look for? You can also upload your resume so I can find the best matches."
+- Keep your reply to 1-2 sentences max.`;
     } else {
       prompt += `
 - The user is NOT logged in and has no resume.
-- Ask them to upload their resume or specify what type of role they're looking for.
+- You MUST ask what role they want OR suggest uploading a resume. Do NOT search. You have no tools right now.
 - Example: "Sure! What kind of roles are you looking for? You can also upload your resume so I can find the best matches."
-- Do NOT search immediately — you need a role or resume first.`;
+- Keep your reply to 1-2 sentences max.`;
     }
   }
 
@@ -150,6 +151,11 @@ export async function processChat(
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
+    // On the very first message, withhold tools when we need the user to confirm their role first.
+    // This forces Claude to respond with text only (e.g. "Should I look for Software Engineer roles?").
+    const needsRoleConfirmation = isFirstMessage && userStatus?.isLoggedIn && userStatus?.dynamicTitle;
+    const needsMoreInfo = isFirstMessage && (!userStatus?.isLoggedIn || !userStatus?.hasResume);
+
     while (iterations < MAX_ITERATIONS) {
       iterations++;
 
@@ -157,7 +163,7 @@ export async function processChat(
         model: MODEL,
         max_tokens: 1024,
         system: systemPrompt,
-        tools: TOOLS,
+        ...(needsRoleConfirmation || needsMoreInfo ? {} : { tools: TOOLS }),
         messages: currentMessages,
       });
 
