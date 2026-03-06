@@ -135,9 +135,9 @@ export async function getUserResume(
   return apiFetch(`/resume-builder/resume/${userID}`);
 }
 
-/** Get user settings / profile (returns dynamicTitle, dynamicLocation, etc.) */
+/** Get user profile data (returns dynamicTitle, dynamicLocation, etc.) */
 export async function getUserSettings(): Promise<Record<string, unknown>> {
-  return apiFetch("/settings");
+  return apiFetch("/tracking/auth");
 }
 
 /** Get personalized job recommendations based on user profile */
