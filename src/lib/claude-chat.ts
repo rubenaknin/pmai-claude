@@ -151,10 +151,9 @@ export async function processChat(
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
-    // On the very first message, withhold tools when we need the user to confirm their role first.
-    // This forces Claude to respond with text only (e.g. "Should I look for Software Engineer roles?").
-    const needsRoleConfirmation = isFirstMessage && userStatus?.isLoggedIn && userStatus?.dynamicTitle;
-    const needsMoreInfo = isFirstMessage && (!userStatus?.isLoggedIn || !userStatus?.hasResume);
+    // ALWAYS withhold tools on the very first message.
+    // Claude must ask a clarifying question first (confirm role, ask for details, etc.)
+    // Tools become available from the second message onward.
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
@@ -163,7 +162,7 @@ export async function processChat(
         model: MODEL,
         max_tokens: 1024,
         system: systemPrompt,
-        ...(needsRoleConfirmation || needsMoreInfo ? {} : { tools: TOOLS }),
+        ...(isFirstMessage ? {} : { tools: TOOLS }),
         messages: currentMessages,
       });
 
