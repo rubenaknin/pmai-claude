@@ -24,6 +24,14 @@ export async function POST(req: NextRequest) {
       platform: "PitchMeAI",
     });
 
+    // Check for error messages from the backend (e.g. out of credits)
+    if (!result.newResumeHTMLBody && result.msg) {
+      return NextResponse.json(
+        { error: result.msg, success: false },
+        { status: 402 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       html: result.newResumeHTMLBody || "",
