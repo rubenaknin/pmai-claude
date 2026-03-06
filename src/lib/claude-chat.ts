@@ -103,6 +103,13 @@ Guidelines:
 
 // ── NLP helpers for first-message parsing ──
 
+/** Words that should never be treated as a job role */
+const JUNK_ROLES = new Set([
+  "me", "us", "my", "i", "jobs", "job", "positions", "position",
+  "roles", "role", "work", "opportunities", "openings", "for",
+  "all", "these", "those", "it", "them",
+]);
+
 /** Extract an explicit job role from the message. Returns null if the user didn't specify one. */
 function extractRole(message: string): string | null {
   const patterns = [
@@ -120,6 +127,8 @@ function extractRole(message: string): string | null {
       let role = match[1].trim();
       // Strip leading filler words
       role = role.replace(/^(some|any|a|the|good|great|new|best|more|few)\s+/i, "").trim();
+      // Reject junk/filler terms that are not actual job titles
+      if (JUNK_ROLES.has(role.toLowerCase())) continue;
       if (role.length > 1 && role.length < 60) {
         return role;
       }
@@ -350,8 +359,15 @@ async function executeTool(
     }
 
     case "search_jobs": {
+      // Filter out junk search terms that Claude sometimes extracts from filler words
+      let searchTerm = (input.search as string | undefined)?.trim();
+      const JUNK_TERMS = ["me", "jobs", "job", "positions", "position", "roles", "role", "work", "opportunities", "openings"];
+      if (searchTerm && JUNK_TERMS.includes(searchTerm.toLowerCase())) {
+        searchTerm = undefined;
+      }
+
       const raw = await searchJobs({
-        search: input.search as string | undefined,
+        search: searchTerm,
         location: input.location as string | undefined,
       });
       const { jobs, total } = mapSearchResponse(raw);

@@ -29,6 +29,10 @@ interface JobCardProps {
   onSave: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
   onRemoveJob?: (jobId: string, mode: "single" | "title" | "location") => void;
+  onMatchResume?: (job: Job) => void;
+  matchingJobId?: string | null;
+  isSelected?: boolean;
+  onToggleSelect?: (jobId: string) => void;
   compact?: boolean;
 }
 
@@ -39,15 +43,20 @@ export function JobCard({
   onSave,
   onEmailHM,
   onRemoveJob,
+  onMatchResume,
+  matchingJobId,
+  isSelected,
+  onToggleSelect,
   compact,
 }: JobCardProps) {
   const logoColor = LOGO_COLORS[job.company] || "bg-gray-600";
   const initial = job.company.charAt(0);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const isMatching = matchingJobId === job.id;
 
   const handleCardClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("[data-radix-popover-content]")) return;
+    if (target.closest("button") || target.closest("[data-radix-popover-content]") || target.closest("input[type='checkbox']")) return;
     onViewDetail(job);
   };
 
@@ -56,11 +65,31 @@ export function JobCard({
   return (
     <div
       onClick={handleCardClick}
-      className={`rounded-xl border border-border/50 bg-card transition-colors hover:bg-muted/30 cursor-pointer ${
+      className={`rounded-xl border transition-colors hover:bg-muted/30 cursor-pointer ${
         compact ? "p-3" : "p-4"
+      } ${
+        isSelected
+          ? "border-primary/30 ring-2 ring-primary/20 bg-primary/5"
+          : "border-border/50 bg-card"
       }`}
     >
       <div className="flex items-start gap-3">
+        {/* Checkbox */}
+        {onToggleSelect && (
+          <div className="flex items-center pt-0.5 shrink-0">
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                onToggleSelect(job.id);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 rounded border-border/50 text-primary focus:ring-primary/30 cursor-pointer"
+            />
+          </div>
+        )}
+
         {/* Company logo */}
         <div
           className={`flex ${compact ? "h-9 w-9" : "h-10 w-10"} shrink-0 items-center justify-center rounded-lg ${logoColor} text-white ${compact ? "text-xs" : "text-sm"} font-bold`}
@@ -158,7 +187,7 @@ export function JobCard({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 mt-2.5">
+          <div className="flex items-center gap-2 mt-2.5 flex-wrap">
             <Button
               size="sm"
               variant={job.status.applied ? "secondary" : "default"}
@@ -175,6 +204,28 @@ export function JobCard({
                 "Apply for me"
               )}
             </Button>
+            {/* Match my resume */}
+            {onMatchResume && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+                onClick={(e) => { e.stopPropagation(); onMatchResume(job); }}
+                disabled={isMatching}
+              >
+                {isMatching ? (
+                  <span className="flex items-center gap-1">
+                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    Matching...
+                  </span>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+                    Match my resume
+                  </>
+                )}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

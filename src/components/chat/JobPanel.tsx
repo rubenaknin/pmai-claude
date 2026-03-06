@@ -25,6 +25,12 @@ interface JobPanelProps {
   onEmailHM: (job: Job) => void;
   onRemoveJob: (jobId: string, mode: "single" | "title" | "location") => void;
   onClose: () => void;
+  onMatchResume?: (job: Job) => void;
+  matchingJobId?: string | null;
+  selectedJobIds?: Set<string>;
+  onToggleSelect?: (jobId: string) => void;
+  onSelectAll?: () => void;
+  onClearSelection?: () => void;
 }
 
 export function JobPanel({
@@ -37,6 +43,12 @@ export function JobPanel({
   onEmailHM,
   onRemoveJob,
   onClose,
+  onMatchResume,
+  matchingJobId,
+  selectedJobIds,
+  onToggleSelect,
+  onSelectAll,
+  onClearSelection,
 }: JobPanelProps) {
   const [sort, setSort] = useState<SortOption>("relevance");
   const [page, setPage] = useState(0);
@@ -45,7 +57,6 @@ export function JobPanel({
   const sortedJobs = useMemo(() => {
     const copy = [...jobs];
     if (sort === "recent") {
-      // Mock: reverse so "1 day ago" comes first (lower IDs posted more recently for some)
       copy.sort((a, b) => {
         const order: Record<string, number> = {
           "1 day ago": 0, "2 days ago": 1, "3 days ago": 2, "4 days ago": 3,
@@ -54,7 +65,6 @@ export function JobPanel({
         return (order[a.postedDate] ?? 7) - (order[b.postedDate] ?? 7);
       });
     } else if (sort === "near-me") {
-      // Mock: prioritize San Francisco, then other CA, then nearby states
       copy.sort((a, b) => {
         const nearScore = (loc: string) => {
           if (loc.includes("San Francisco")) return 0;
@@ -67,13 +77,14 @@ export function JobPanel({
         return nearScore(a.location) - nearScore(b.location);
       });
     }
-    // "relevance" is default order (by matchPercent, already sorted)
     return copy;
   }, [jobs, sort]);
 
   const totalPages = Math.ceil(sortedJobs.length / PAGE_SIZE);
   const pageJobs = sortedJobs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const allApplied = jobs.every((j) => j.status.applied);
+  const selectionCount = selectedJobIds?.size || 0;
+  const hasSelection = selectionCount > 0;
 
   const scrollToTop = useCallback(() => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -105,7 +116,11 @@ export function JobPanel({
               onClick={onApplyAll}
               disabled={allApplied}
             >
-              {allApplied ? "All Applied" : "Apply for all"}
+              {allApplied
+                ? "All Applied"
+                : hasSelection
+                ? `Apply selected (${selectionCount})`
+                : "Apply for all"}
             </Button>
             <button
               onClick={onClose}
@@ -117,25 +132,49 @@ export function JobPanel({
           </div>
         </div>
 
-        {/* Sort filters */}
-        <div className="flex gap-1.5">
-          {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
-            <button
-              key={key}
-              onClick={() => {
-                setSort(key);
-                setPage(0);
-                scrollToTop();
-              }}
-              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-                sort === key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              {SORT_LABELS[key]}
-            </button>
-          ))}
+        {/* Selection controls + Sort filters */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex gap-1.5">
+            {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
+              <button
+                key={key}
+                onClick={() => {
+                  setSort(key);
+                  setPage(0);
+                  scrollToTop();
+                }}
+                className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                  sort === key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {SORT_LABELS[key]}
+              </button>
+            ))}
+          </div>
+
+          {/* Selection controls */}
+          {onToggleSelect && (
+            <div className="flex items-center gap-1.5">
+              {hasSelection && onClearSelection && (
+                <button
+                  onClick={onClearSelection}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+              {onSelectAll && (
+                <button
+                  onClick={onSelectAll}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Select all
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -154,6 +193,10 @@ export function JobPanel({
               onSave={onSave}
               onEmailHM={onEmailHM}
               onRemoveJob={onRemoveJob}
+              onMatchResume={onMatchResume}
+              matchingJobId={matchingJobId}
+              isSelected={selectedJobIds?.has(job.id)}
+              onToggleSelect={onToggleSelect}
               compact
             />
           ))}

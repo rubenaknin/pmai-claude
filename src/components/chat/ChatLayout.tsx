@@ -38,13 +38,19 @@ function generateTitle(message: string): string {
 
 export function ChatLayout() {
   const searchParams = useSearchParams();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const initialQuery = searchParams.get("q");
+
+  // Pre-populate message + typing indicator when arriving from homepage with ?q=
+  const [messages, setMessages] = useState<Message[]>(() =>
+    initialQuery
+      ? [{ id: `user-init-${Date.now()}`, role: "user" as const, content: initialQuery }]
+      : []
+  );
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([
-    "Find me jobs",
-    "Here's my resume — find jobs for me",
-  ]);
+  const [isTyping, setIsTyping] = useState(!!initialQuery);
+  const [suggestions, setSuggestions] = useState<string[]>(
+    initialQuery ? [] : ["Find me jobs", "Here's my resume — find jobs for me"]
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -67,6 +73,13 @@ export function ChatLayout() {
   // Resume preview data
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+
+  // Job selection state
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+
+  // Drag & drop state for the chat area
+  const [isChatDragging, setIsChatDragging] = useState(false);
+  const chatDragCounter = useRef(0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
@@ -136,6 +149,7 @@ export function ChatLayout() {
     setEmailData(null);
     setResumeData(null);
     setIsTyping(false);
+    setSelectedJobIds(new Set());
   }, []);
 
   // --- New Conversation handler ---
@@ -154,6 +168,7 @@ export function ChatLayout() {
     setEmailData(null);
     setResumeData(null);
     setIsTyping(false);
+    setSelectedJobIds(new Set());
     initialQueryHandled.current = false;
   }, [saveCurrentConversation]);
 
@@ -289,6 +304,29 @@ export function ChatLayout() {
     []
   );
 
+  // --- Job selection helpers ---
+  const toggleJobSelection = useCallback((jobId: string) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllJobs = useCallback(() => {
+    setSelectedJobIds(new Set(jobs.map((j) => j.id)));
+  }, [jobs]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedJobIds(new Set());
+  }, []);
+
+  const selectedJobs = jobs.filter((j) => selectedJobIds.has(j.id));
+
   // Keep detail sheet in sync with job state changes
   useEffect(() => {
     if (detailJob) {
@@ -324,6 +362,106 @@ export function ChatLayout() {
       return msg;
     },
     []
+  );
+
+  // --- File upload handler ---
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      const userMsg: Message = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: `Uploading resume: ${file.name}`,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setIsTyping(true);
+      setSuggestions([]);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/api/resume/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        setIsTyping(false);
+
+        if (data.success) {
+          const firstName = data.userProfile?.firstName || "";
+          const lastName = data.userProfile?.lastName || "";
+          const nameStr = [firstName, lastName].filter(Boolean).join(" ");
+
+          setUserStatus((prev) => ({
+            ...prev,
+            isLoggedIn: prev?.isLoggedIn ?? false,
+            hasResume: true,
+            userFirstName: firstName || prev?.userFirstName,
+          }));
+
+          addBotMessage(
+            nameStr
+              ? `Got your resume! I found you're ${nameStr}. What kind of roles are you looking for?`
+              : "Got your resume! What kind of roles are you looking for?"
+          );
+          setSuggestions([
+            "Find me jobs that match my resume",
+            "Show me remote roles",
+          ]);
+        } else {
+          addBotMessage(
+            data.error || "Sorry, I couldn't process your resume. Please try a different file."
+          );
+        }
+      } catch (err) {
+        setIsTyping(false);
+        console.error("Resume upload failed:", err);
+        addBotMessage(
+          "Sorry, I couldn't upload your resume. Please check your connection and try again."
+        );
+      }
+    },
+    [addBotMessage]
+  );
+
+  // --- Chat area drag & drop handlers ---
+  const handleChatDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatDragCounter.current++;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsChatDragging(true);
+    }
+  }, []);
+
+  const handleChatDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatDragCounter.current--;
+    if (chatDragCounter.current === 0) {
+      setIsChatDragging(false);
+    }
+  }, []);
+
+  const handleChatDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleChatDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsChatDragging(false);
+      chatDragCounter.current = 0;
+
+      const file = e.dataTransfer.files?.[0];
+      if (file) {
+        handleFileUpload(file);
+      }
+    },
+    [handleFileUpload]
   );
 
   // --- Match my resume ---
@@ -534,6 +672,64 @@ export function ChatLayout() {
 
       // Check for quick intent matches (button-like phrases)
       const lower = content.toLowerCase();
+
+      // Selection-based actions
+      if (lower.includes("apply to selected") || lower.includes("apply for selected")) {
+        if (selectedJobs.length > 0) {
+          setIsTyping(false);
+          const targetJobs = selectedJobs.filter((j) => !j.status.applied);
+          setJobs((prev) =>
+            prev.map((j) =>
+              selectedJobIds.has(j.id)
+                ? { ...j, status: { ...j.status, applied: true, appliedAt: "just now" } }
+                : j
+            )
+          );
+          clearSelection();
+          addBotMessage(
+            `Applying to ${targetJobs.length} selected job${targetJobs.length !== 1 ? "s" : ""}... I'm tailoring your resume for each position.`
+          );
+          addBotMessage(
+            `Done! I've submitted ${targetJobs.length} tailored applications.`,
+            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} /> }
+          );
+          setSuggestions(["Yes, email all hiring managers", "Find more jobs"]);
+          return;
+        }
+      }
+      if (lower.includes("email hms for selected") || lower.includes("email hiring managers for selected")) {
+        if (selectedJobs.length > 0) {
+          setIsTyping(false);
+          const count = selectedJobs.length;
+          setJobs((prev) =>
+            prev.map((j) =>
+              selectedJobIds.has(j.id)
+                ? { ...j, status: { ...j.status, emailSent: true, emailSentAt: "just now" } }
+                : j
+            )
+          );
+          clearSelection();
+          addBotMessage(`Sending personalized emails to hiring managers at ${count} selected companies...`);
+          addBotMessage(
+            "Done! I've sent a tailored email to each hiring manager.",
+            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} /> }
+          );
+          setSuggestions(["Find more jobs", "Help me prep for interviews"]);
+          return;
+        }
+      }
+      if (lower.includes("match resume for selected")) {
+        if (selectedJobs.length > 0) {
+          setIsTyping(false);
+          const firstSelected = selectedJobs[0];
+          clearSelection();
+          if (firstSelected) {
+            await handleMatchResume(firstSelected);
+          }
+          return;
+        }
+      }
+
       if (
         lower.includes("apply for all") ||
         lower.includes("apply to all")
@@ -701,21 +897,116 @@ export function ChatLayout() {
       handleViewDetail,
       handleOpenEmail,
       handleRemoveJob,
+      handleMatchResume,
       userStatus,
+      selectedJobs,
+      selectedJobIds,
+      clearSelection,
     ]
   );
 
-  // Handle initial query from homepage
+  // Handle initial query from homepage — fire immediately, don't wait for userStatus
   useEffect(() => {
     if (initialQueryHandled.current) return;
-    if (!userStatus) return; // wait until user status is loaded
-    const q = searchParams.get("q");
-    if (q) {
-      initialQueryHandled.current = true;
-      setTimeout(() => handleUserMessage(q), 300);
-    }
+    if (!initialQuery) return;
+    initialQueryHandled.current = true;
+
+    // The user message is already in state (pre-populated above).
+    // We need to call the API directly instead of handleUserMessage
+    // because handleUserMessage would add a duplicate user message.
+    const fireInitialQuery = async () => {
+      // Create conversation entry
+      const title = generateTitle(initialQuery);
+      setConversations((prev) => [
+        {
+          id: activeConversationId,
+          title,
+          messages: [],
+          chatHistory: [],
+          jobs: [],
+          totalJobs: 0,
+          suggestions: [],
+        },
+        ...prev,
+      ]);
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: initialQuery,
+            history: [],
+            jobsContext: undefined,
+            userStatus: userStatus || undefined,
+          }),
+        });
+
+        const data: ChatApiResponse = await res.json();
+        setIsTyping(false);
+
+        setChatHistory([
+          { role: "user", content: initialQuery },
+          { role: "assistant", content: data.botMessage },
+        ]);
+
+        const debugInfo = data._debug;
+        switch (data.actionType) {
+          case "show_jobs": {
+            if (data.data?.jobs && data.data.jobs.length > 0) {
+              const incomingJobs = data.data.jobs;
+              const incomingTotal = data.data.totalJobs || incomingJobs.length;
+              setJobs(incomingJobs);
+              setTotalJobs(incomingTotal);
+              setShowJobPanel(true);
+
+              if (incomingJobs.length <= 5) {
+                addBotMessage(
+                  `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`,
+                  {
+                    customComponent: (
+                      <ChatJobCards
+                        jobs={incomingJobs}
+                        totalJobs={incomingTotal}
+                        onApply={handleApplySingle}
+                        onEmailHM={handleOpenEmail}
+                        onViewDetail={handleViewDetail}
+                        onMatchResume={handleMatchResume}
+                        matchingJobId={matchingJobId}
+                      />
+                    ),
+                  },
+                  debugInfo
+                );
+              } else {
+                addBotMessage(
+                  `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`,
+                  undefined,
+                  debugInfo
+                );
+              }
+            } else {
+              addBotMessage(data.botMessage, undefined, debugInfo);
+            }
+            break;
+          }
+          default:
+            addBotMessage(data.botMessage, undefined, debugInfo);
+        }
+
+        if (data.suggestions && data.suggestions.length > 0) {
+          setSuggestions(data.suggestions);
+        }
+      } catch (err) {
+        setIsTyping(false);
+        console.error("Chat API error:", err);
+        addBotMessage("Sorry, I couldn't reach the server. Please check your connection and try again.");
+      }
+    };
+
+    fireInitialQuery();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, userStatus]);
+  }, [initialQuery]);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -791,7 +1082,23 @@ export function ChatLayout() {
       </aside>
 
       {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col min-w-0 min-h-0">
+      <div
+        className="flex flex-1 flex-col min-w-0 min-h-0 relative"
+        onDragEnter={handleChatDragEnter}
+        onDragLeave={handleChatDragLeave}
+        onDragOver={handleChatDragOver}
+        onDrop={handleChatDrop}
+      >
+        {/* Full-area drop overlay */}
+        {isChatDragging && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-12 py-10">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary/60"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
+              <p className="text-sm font-medium text-primary/80">Drop your resume here</p>
+              <p className="text-xs text-muted-foreground">PDF, DOC, or DOCX</p>
+            </div>
+          </div>
+        )}
         <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -848,8 +1155,11 @@ export function ChatLayout() {
         <div className="shrink-0 mx-auto w-full max-w-2xl">
           <ChatInput
             onSend={handleUserMessage}
+            onFileUpload={handleFileUpload}
             disabled={isTyping}
             suggestions={suggestions}
+            selectedJobs={selectedJobs}
+            onClearSelection={clearSelection}
           />
         </div>
       </div>
@@ -866,6 +1176,12 @@ export function ChatLayout() {
           onEmailHM={handleOpenEmail}
           onRemoveJob={handleRemoveJob}
           onClose={() => setShowJobPanel(false)}
+          onMatchResume={handleMatchResume}
+          matchingJobId={matchingJobId}
+          selectedJobIds={selectedJobIds}
+          onToggleSelect={toggleJobSelection}
+          onSelectAll={selectAllJobs}
+          onClearSelection={clearSelection}
         />
       )}
 

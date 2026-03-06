@@ -207,6 +207,19 @@ export interface PitchMeResumeResponse {
   [key: string]: unknown;
 }
 
+/** Response from POST /resume-builder/upload */
+export interface PitchMeResumeUploadResponse {
+  success?: boolean;
+  cvContent?: string;
+  userProfile?: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    phoneNumber?: string;
+  };
+  [key: string]: unknown;
+}
+
 /** Response from POST /letter/generate */
 export interface PitchMeEmailResponse {
   jobId?: string;

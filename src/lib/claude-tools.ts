@@ -15,11 +15,12 @@ export const TOOLS: Tool[] = [
 
 RULES for the "search" parameter:
 - Should be a specific job title or role (e.g. "frontend engineer", "data scientist", "product manager")
-- NEVER use generic words like "jobs", "positions", "roles", "work", "opportunities"
-- If the user says "find me jobs" without specifying a role, use get_job_recommendations instead (it uses their profile automatically)
+- NEVER use generic/filler words like "me", "jobs", "positions", "roles", "work", "opportunities"
+- "find me jobs" → the word "me" is NOT a search term, it's a pronoun. Omit the search parameter entirely.
+- If the user says "find me jobs" without specifying a role, either omit the search parameter (use only location) or use get_job_recommendations instead
 - The search parameter is OPTIONAL — if omitted, the backend will use the user's profile taxonomy title automatically
 - Good examples: "react developer", "senior backend engineer", "marketing manager"
-- Bad examples: "jobs", "positions in NYC", "work"`,
+- Bad examples: "me", "jobs", "positions in NYC", "work"`,
     input_schema: {
       type: "object" as const,
       properties: {

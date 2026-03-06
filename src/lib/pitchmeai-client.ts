@@ -7,6 +7,7 @@
 import type {
   PitchMeSearchResponse,
   PitchMeResumeResponse,
+  PitchMeResumeUploadResponse,
   PitchMeEmailResponse,
   DebugNetworkLog,
 } from "./types";
@@ -198,6 +199,64 @@ export async function getUserResume(
 /** Get personalized job recommendations based on user profile */
 export async function getJobRecommendations(): Promise<PitchMeSearchResponse> {
   return apiFetch<PitchMeSearchResponse>("/jobs/recommendations");
+}
+
+/** Upload a resume file (PDF/DOCX) to the PitchMeAI backend */
+export async function uploadResume(
+  formData: FormData
+): Promise<PitchMeResumeUploadResponse> {
+  const url = `${API_URL}/resume-builder/upload`;
+  const start = Date.now();
+  let status: number | null = null;
+  let responseText = "";
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Cookie: `AuthSession=${SESSION_COOKIE}`,
+        // Do NOT set Content-Type — browser/node sets multipart boundary automatically
+      },
+      body: formData,
+    });
+
+    status = res.status;
+    responseText = await res.text();
+    const durationMs = Date.now() - start;
+
+    networkLogs.push({
+      method: "POST",
+      url,
+      status,
+      durationMs,
+      requestBody: "[FormData file upload]",
+      responseSnippet: responseText.slice(0, 1000),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `PitchMeAI API error: ${res.status} ${res.statusText} — ${responseText.slice(0, 200)}`
+      );
+    }
+
+    return JSON.parse(responseText) as PitchMeResumeUploadResponse;
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+
+    if (status === null) {
+      networkLogs.push({
+        method: "POST",
+        url,
+        status: null,
+        durationMs,
+        requestBody: "[FormData file upload]",
+        error: errMsg,
+      });
+    }
+
+    throw err;
+  }
 }
 
 /** Resume builder — check build status / get result */
