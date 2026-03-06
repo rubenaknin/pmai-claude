@@ -77,34 +77,8 @@ Guidelines:
     }
   }
 
-  // First-message behavior rules
-  if (isFirstMessage) {
-    prompt += `\n\n⚠️ CRITICAL — FIRST MESSAGE RULES (this is the user's very first message — you have NO tools available for this turn):`;
-
-    if (userStatus?.isLoggedIn && userStatus?.hasResume && userStatus?.dynamicTitle) {
-      const title = userStatus.dynamicTitle;
-      const name = userStatus.userFirstName ? `${userStatus.userFirstName}, ` : "";
-      prompt += `
-- The user has a resume and their profile title is "${title}".
-- You MUST reply with a short confirmation question. Do NOT search. You have no tools right now.
-- If they ask to find jobs (with or without a location), ask: "Sure${name ? `, ${userStatus.userFirstName}` : ""}! Should I look for ${title} roles in [their location if mentioned]?"
-- If they explicitly specify a different role (e.g. "find me marketing jobs"), confirm that role instead.
-- Keep your reply to 1-2 sentences max. Just ask the confirmation question.`;
-    } else if (userStatus?.isLoggedIn) {
-      const name = userStatus.userFirstName ? ` ${userStatus.userFirstName}` : "";
-      prompt += `
-- The user is logged in but does NOT have a resume or known job title.
-- You MUST ask what role they want OR suggest uploading a resume. Do NOT search. You have no tools right now.
-- Example: "Hey${name}! What type of role should I look for? You can also upload your resume so I can find the best matches."
-- Keep your reply to 1-2 sentences max.`;
-    } else {
-      prompt += `
-- The user is NOT logged in and has no resume.
-- You MUST ask what role they want OR suggest uploading a resume. Do NOT search. You have no tools right now.
-- Example: "Sure! What kind of roles are you looking for? You can also upload your resume so I can find the best matches."
-- Keep your reply to 1-2 sentences max.`;
-    }
-  }
+  // Note: First-message responses are handled in code (buildFirstMessageResponse),
+  // so Claude only ever handles the second message onward where tools are available.
 
   if (userIp) {
     prompt += `\n\nUser's IP address (for approximate geolocation if no location specified): ${userIp}`;
@@ -143,6 +117,12 @@ export async function processChat(
 
   messages.push({ role: "user", content: userMessage });
 
+  // ── FIRST MESSAGE: handle entirely in code, no Claude call ──
+  if (isFirstMessage) {
+    debug.networkLogs = getNetworkLogs();
+    return buildFirstMessageResponse(userMessage, userStatus, debug);
+  }
+
   try {
     // Agentic loop — keep calling Claude until it stops using tools (max 5 iterations)
     let currentMessages = [...messages];
@@ -151,10 +131,6 @@ export async function processChat(
     let iterations = 0;
     const MAX_ITERATIONS = 5;
 
-    // ALWAYS withhold tools on the very first message.
-    // Claude must ask a clarifying question first (confirm role, ask for details, etc.)
-    // Tools become available from the second message onward.
-
     while (iterations < MAX_ITERATIONS) {
       iterations++;
 
@@ -162,7 +138,7 @@ export async function processChat(
         model: MODEL,
         max_tokens: 1024,
         system: systemPrompt,
-        ...(isFirstMessage ? {} : { tools: TOOLS }),
+        tools: TOOLS,
         messages: currentMessages,
       });
 
@@ -243,6 +219,61 @@ export async function processChat(
       _debug: debug,
     };
   }
+}
+
+/** Extract a location from the user's message (e.g. "find me jobs in New York" → "New York") */
+function extractLocation(message: string): string | null {
+  const match = message.match(/\b(?:in|near|around|at)\s+(.+?)(?:\s*[.!?]?\s*$)/i);
+  if (match) {
+    // Clean up: remove trailing filler words
+    const loc = match[1].replace(/\s*(please|thanks|thank you|asap|now)$/i, "").trim();
+    if (loc.length > 0 && loc.length < 60) return loc;
+  }
+  return null;
+}
+
+/** Build a deterministic first-message response — no Claude API call needed */
+function buildFirstMessageResponse(
+  userMessage: string,
+  userStatus?: UserStatusResponse,
+  debug?: DebugInfo,
+): ChatApiResponse {
+  const name = userStatus?.userFirstName;
+  const title = userStatus?.dynamicTitle;
+  const hasResume = userStatus?.hasResume;
+  const isLoggedIn = userStatus?.isLoggedIn;
+  const location = extractLocation(userMessage);
+
+  let botMessage: string;
+  let suggestions: string[];
+
+  if (isLoggedIn && hasResume && title) {
+    // Scenario 2: We know their title — confirm before searching
+    const greeting = name ? `Sure, ${name}!` : "Sure!";
+    if (location) {
+      botMessage = `${greeting} Should I look for ${title} roles in ${location}?`;
+      suggestions = [`Yes, find ${title} jobs in ${location}`, "No, a different role"];
+    } else {
+      botMessage = `${greeting} Should I look for ${title} roles?`;
+      suggestions = [`Yes, find ${title} jobs`, "No, a different role"];
+    }
+  } else {
+    // Scenario 1 & 3: No resume/title — ask for details
+    const greeting = name ? `Sure, ${name}!` : "Sure!";
+    if (location) {
+      botMessage = `${greeting} Any specific type of jobs I should look for in ${location}? You can also upload your resume so I can get to know you better.`;
+    } else {
+      botMessage = `${greeting} What kind of roles are you looking for? You can also upload your resume so I can get to know you better.`;
+    }
+    suggestions = ["Upload my resume"];
+  }
+
+  return {
+    botMessage,
+    actionType: "general",
+    suggestions,
+    _debug: debug,
+  };
 }
 
 async function executeTool(
