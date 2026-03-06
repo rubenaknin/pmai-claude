@@ -147,13 +147,32 @@ function extractLocation(message: string): string | null {
   return null;
 }
 
+/** Check if a message looks like a job search intent (vs. a general question or conversation) */
+function isJobSearchIntent(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  // Positive signals: explicit search verbs + "jobs/roles/positions"
+  if (/\b(find|search|look for|get|show)\b.*\b(jobs?|roles?|positions?|openings?)\b/i.test(lower)) return true;
+  if (/\b(looking for|interested in)\b.*\b(jobs?|roles?|positions?)\b/i.test(lower)) return true;
+  if (/\b(i want|i need|i'd like)\b.*\b(jobs?|roles?|positions?)\b/i.test(lower)) return true;
+  // Negative signals: questions, greetings, conversational messages
+  if (/\?$/.test(lower)) return false;
+  if (/^(do you|don't you|can you|could you|have you|did you|are you|is there|what|how|why|where|when|who)\b/i.test(lower)) return false;
+  if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay)\b/i.test(lower)) return false;
+  if (/\b(my resume|my cv|my profile|my account)\b/i.test(lower) && !/\b(find|search|match)\b/i.test(lower)) return false;
+  // Default: treat short vague messages as conversational
+  return false;
+}
+
 // ── First-message handler (deterministic, no LLM) ──
 
 async function handleFirstMessage(
   userMessage: string,
   userStatus?: UserStatusResponse,
   debug?: DebugInfo,
-): Promise<ChatApiResponse> {
+): Promise<ChatApiResponse | null> {
+  // If the message doesn't look like a job search, let the LLM handle it
+  if (!isJobSearchIntent(userMessage)) return null;
+
   const name = userStatus?.userFirstName;
   const profileTitle = userStatus?.dynamicTitle;
   const hasResume = userStatus?.hasResume;
@@ -239,12 +258,14 @@ export async function processChat(
 
   const isFirstMessage = history.length === 0;
 
-  // ── First message: deterministic handler ──
+  // ── First message: deterministic handler for job search intents ──
   if (isFirstMessage) {
-    return handleFirstMessage(userMessage, userStatus, debug);
+    const deterministic = await handleFirstMessage(userMessage, userStatus, debug);
+    if (deterministic) return deterministic;
+    // Not a job search intent — fall through to LLM
   }
 
-  // ── Subsequent messages: LangChain agentic loop ──
+  // ── LangChain agentic loop (subsequent messages + non-search first messages) ──
   const systemPrompt = buildSystemPrompt(userIp, userStatus);
   const fullSystemPrompt = jobsContext
     ? `${systemPrompt}\n\nCurrent jobs the user is looking at:\n${jobsContext}`
