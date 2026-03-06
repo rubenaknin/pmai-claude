@@ -170,6 +170,36 @@ function isJobSearchIntent(message: string): boolean {
   return false;
 }
 
+/**
+ * Determine whether this message needs tools at all.
+ * Returns true for purely conversational messages that should NEVER trigger tool calls.
+ * This is the architectural gate — if true, the LLM is invoked WITHOUT tools bound.
+ */
+function isConversational(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+
+  // Questions (ends with ?)
+  if (/\?$/.test(lower)) return true;
+
+  // Starts with question words
+  if (/^(do you|don't you|dont you|can you|could you|have you|did you|are you|is there|what|how|why|where|when|who|which)\b/i.test(lower)) return true;
+
+  // Greetings, thanks, short conversational
+  if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay|cool|great|nice|awesome|got it|sure|yes|no|yep|nope)\b/i.test(lower)) return true;
+
+  // Resume/profile/account questions without action verbs
+  if (/\b(my resume|my cv|my profile|my account|my info|my data|about me)\b/i.test(lower) && !/\b(find|search|match|apply|generate|create|tailor|send|email)\b/i.test(lower)) return true;
+
+  // Explicit action verbs → needs tools
+  if (/\b(find|search|look for|get me|show me|apply|email|generate|match|tailor|send)\b/i.test(lower)) return false;
+
+  // Short messages without action intent are conversational
+  if (lower.split(/\s+/).length <= 6 && !/\b(find|search|apply|email|jobs?|resume)\b/i.test(lower)) return true;
+
+  // Default: not conversational, let tools be available
+  return false;
+}
+
 // ── First-message handler (deterministic, no LLM) ──
 
 async function handleFirstMessage(
@@ -272,7 +302,7 @@ export async function processChat(
     // Not a job search intent — fall through to LLM
   }
 
-  // ── LangChain agentic loop (subsequent messages + non-search first messages) ──
+  // ── LangChain loop (subsequent messages + non-search first messages) ──
   const systemPrompt = buildSystemPrompt(userIp, userStatus);
   const fullSystemPrompt = jobsContext
     ? `${systemPrompt}\n\nCurrent jobs the user is looking at:\n${jobsContext}`
@@ -285,17 +315,19 @@ export async function processChat(
   }
   messages.push(new HumanMessage(userMessage));
 
-  // Bind tools to model
-  const modelWithTools = llm.bindTools(TOOLS);
+  // Gate: only bind tools when the message could require an action.
+  // Conversational messages get the plain LLM — zero chance of spurious tool calls.
+  const conversational = isConversational(userMessage);
+  const model = conversational ? llm : llm.bindTools(TOOLS);
 
   try {
     let currentMessages = [...messages];
     let finalActionType: ActionType = "general";
     let finalData: ChatApiResponse["data"] | undefined;
-    const MAX_ITERATIONS = 5;
+    const MAX_ITERATIONS = conversational ? 1 : 5;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const response = await modelWithTools.invoke(currentMessages);
+      const response = await model.invoke(currentMessages);
 
       // Check for tool calls
       const toolCalls = response.tool_calls;
