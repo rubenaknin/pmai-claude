@@ -74,13 +74,20 @@ RESUME & EMAIL GENERATION:
 - When the user says "apply for job #3", look up that job from the search results context
 - The resume/email generation costs the user 1 credit — mention this if relevant
 
+WHEN NOT TO USE TOOLS — this is critical:
+- If the user asks a QUESTION (anything ending with "?" or starting with "do you", "can you", "have you", "what", "how", "why", "where", "who", "is there", "don't you"), respond conversationally — do NOT call any tools
+- Questions about resume, profile, or account (e.g. "you don't have my resume?", "do you know my name?", "what info do you have about me?") should NEVER trigger a job search — just answer based on the USER PROFILE section above
+- If the user is chatting, asking for help, thanking you, greeting, or making a comment — respond naturally without calling any tool
+- Only call search_jobs or get_job_recommendations when the user explicitly asks you to FIND or SEARCH for jobs
+- When in doubt, respond conversationally rather than searching
+
 Guidelines:
 - Be conversational, helpful, and concise
 - When showing search results, respond with ONE short sentence like "I found 47 jobs in Tel Aviv for you." Do NOT list or describe individual jobs — the UI renders job cards automatically. Never enumerate jobs in your text response.
 - When the user wants to apply or email, confirm the action and execute it
 - If the user references a specific job from previous results, use the job context to identify it
 - Never make up job listings — only show real results from the search tool
-- When no tool is needed (general questions, chitchat), just respond naturally`;
+- When no tool is needed (general questions, chitchat), just respond naturally without calling any tools`;
 
   if (userStatus) {
     const parts: string[] = [];

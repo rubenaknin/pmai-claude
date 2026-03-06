@@ -2,11 +2,16 @@
 
 import { useState, useRef, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { JobCard } from "./JobCard";
 import { Job } from "./jobData";
 
 type SortOption = "relevance" | "recent" | "near-me";
-type FilterOption = "all" | "resume-generated" | "no-resume" | "email-sent" | "applied";
+type FilterOption = "resume-generated" | "no-resume" | "email-sent" | "applied";
 
 const SORT_LABELS: Record<SortOption, string> = {
   relevance: "Relevance",
@@ -52,43 +57,53 @@ export function JobPanel({
   onClearSelection,
 }: JobPanelProps) {
   const [sort, setSort] = useState<SortOption>("relevance");
-  const [filter, setFilter] = useState<FilterOption>("all");
+  const [activeFilters, setActiveFilters] = useState<Set<FilterOption>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter counts
+  // Filter counts + visibility
   const filterCounts = useMemo(() => ({
-    all: jobs.length,
     "resume-generated": jobs.filter((j) => j.status.resumeGenerated).length,
     "no-resume": jobs.filter((j) => !j.status.resumeGenerated).length,
     "email-sent": jobs.filter((j) => j.status.emailSent).length,
     applied: jobs.filter((j) => j.status.applied).length,
   }), [jobs]);
 
+  // Only show the filter dropdown when at least one job has had an action taken
+  const hasAnyAction = useMemo(() =>
+    jobs.some((j) => j.status.resumeGenerated || j.status.emailSent || j.status.applied),
+    [jobs]
+  );
+
   const FILTER_LABELS: Record<FilterOption, string> = {
-    all: "All",
     "resume-generated": "Resume generated",
     "no-resume": "No resume",
     "email-sent": "Email sent",
     applied: "Applied",
   };
 
+  const toggleFilter = useCallback((f: FilterOption) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
+    setPage(0);
+  }, []);
+
   const filteredAndSortedJobs = useMemo(() => {
-    // Filter first
+    // Filter first — if multiple filters are active, show union (OR logic)
     let filtered = [...jobs];
-    switch (filter) {
-      case "resume-generated":
-        filtered = filtered.filter((j) => j.status.resumeGenerated);
-        break;
-      case "no-resume":
-        filtered = filtered.filter((j) => !j.status.resumeGenerated);
-        break;
-      case "email-sent":
-        filtered = filtered.filter((j) => j.status.emailSent);
-        break;
-      case "applied":
-        filtered = filtered.filter((j) => j.status.applied);
-        break;
+    if (activeFilters.size > 0) {
+      filtered = filtered.filter((j) => {
+        if (activeFilters.has("resume-generated") && j.status.resumeGenerated) return true;
+        if (activeFilters.has("no-resume") && !j.status.resumeGenerated) return true;
+        if (activeFilters.has("email-sent") && j.status.emailSent) return true;
+        if (activeFilters.has("applied") && j.status.applied) return true;
+        return false;
+      });
     }
 
     // Then sort
@@ -115,7 +130,7 @@ export function JobPanel({
       });
     }
     return copy;
-  }, [jobs, sort, filter]);
+  }, [jobs, sort, activeFilters]);
 
   const totalPages = Math.ceil(filteredAndSortedJobs.length / PAGE_SIZE);
   const pageJobs = filteredAndSortedJobs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -214,26 +229,78 @@ export function JobPanel({
           )}
         </div>
 
-        {/* Filter pills */}
-        <div className="flex gap-1.5 flex-wrap">
-          {(Object.keys(FILTER_LABELS) as FilterOption[]).map((key) => (
-            <button
-              key={key}
-              onClick={() => {
-                setFilter(key);
-                setPage(0);
-                scrollToTop();
-              }}
-              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
-                filter === key
-                  ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {FILTER_LABELS[key]} ({filterCounts[key]})
-            </button>
-          ))}
-        </div>
+        {/* Filter dropdown — only visible when at least one job has an action */}
+        {hasAnyAction && (
+          <div className="flex items-center gap-1.5">
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                    activeFilters.size > 0
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+                  {activeFilters.size > 0 ? `Filters (${activeFilters.size})` : "Filter"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-52 p-1.5" align="start" side="bottom">
+                {(Object.keys(FILTER_LABELS) as FilterOption[]).map((key) => {
+                  const count = filterCounts[key];
+                  const isActive = activeFilters.has(key);
+                  // Hide filter options with 0 matches (except "no-resume" which is always relevant)
+                  if (count === 0 && key !== "no-resume") return null;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleFilter(key)}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                        isActive
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/50"
+                      }`}>
+                        {isActive && (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        )}
+                      </div>
+                      <span className="flex-1">{FILTER_LABELS[key]}</span>
+                      <span className="text-muted-foreground">{count}</span>
+                    </button>
+                  );
+                })}
+                {activeFilters.size > 0 && (
+                  <>
+                    <div className="border-t border-border/30 my-1" />
+                    <button
+                      onClick={() => { setActiveFilters(new Set()); setPage(0); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left text-muted-foreground"
+                    >
+                      Clear filters
+                    </button>
+                  </>
+                )}
+              </PopoverContent>
+            </Popover>
+            {/* Show active filter tags */}
+            {activeFilters.size > 0 && (
+              <div className="flex gap-1 flex-wrap">
+                {[...activeFilters].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => toggleFilter(f)}
+                    className="flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] hover:bg-primary/20 transition-colors"
+                  >
+                    {FILTER_LABELS[f]}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Job list */}
