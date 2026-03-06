@@ -85,7 +85,39 @@ async function apiFetch<T>(
   }
 }
 
-/** Search for jobs matching a query */
+/** Geocode a location string into coordinates using the backend's Google Places integration */
+export async function geocodeLocation(locationText: string): Promise<{
+  location: string;
+  hierarchy: string;
+  lat: number;
+  lng: number;
+} | null> {
+  try {
+    const data = await apiFetch<{
+      results?: Array<{
+        location: string;
+        hierarchy: string;
+        coordinates?: { lat: number; lng: number };
+      }>;
+    }>(`/jobs/locations/search?q=${encodeURIComponent(locationText)}`);
+
+    const first = data.results?.[0];
+    if (first?.coordinates?.lat && first?.coordinates?.lng) {
+      return {
+        location: first.location,
+        hierarchy: first.hierarchy,
+        lat: first.coordinates.lat,
+        lng: first.coordinates.lng,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error("Geocode failed:", err);
+    return null;
+  }
+}
+
+/** Search for jobs matching a query. Geocodes location text into coordinates automatically. */
 export async function searchJobs(params: {
   search?: string;
   location?: string;
@@ -94,9 +126,22 @@ export async function searchJobs(params: {
 }): Promise<PitchMeSearchResponse> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
-  if (params.location) qs.set("location", params.location);
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
+
+  // Geocode location text into coordinates for the backend's bounding box query
+  if (params.location) {
+    const geo = await geocodeLocation(params.location);
+    if (geo) {
+      qs.set("location", geo.location);
+      qs.set("locationLat", String(geo.lat));
+      qs.set("locationLng", String(geo.lng));
+      qs.set("locationHierarchy", geo.hierarchy);
+    } else {
+      // Fallback: pass raw text (may not filter properly)
+      qs.set("location", params.location);
+    }
+  }
 
   const queryString = qs.toString();
   return apiFetch<PitchMeSearchResponse>(`/jobs${queryString ? `?${queryString}` : ""}`);
