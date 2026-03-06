@@ -298,6 +298,95 @@ async function handleFirstMessage(
   };
 }
 
+// ── Follow-up handler (deterministic, no LLM) ──
+
+/**
+ * Handle follow-up messages when the bot previously asked for a missing title or location.
+ * Returns a deterministic response if matched, null otherwise.
+ */
+async function handleFollowUpSearch(
+  userMessage: string,
+  history: ChatHistoryMessage[],
+  userStatus?: UserStatusResponse,
+  debug?: DebugInfo,
+): Promise<ChatApiResponse | null> {
+  if (history.length < 2) return null;
+
+  const lastBot = [...history].reverse().find((m) => m.role === "assistant");
+  if (!lastBot) return null;
+
+  const bot = lastBot.content;
+
+  // Pattern 1: Bot asked for title — "What kind of roles are you looking for in {location}?"
+  const needsTitle = bot.match(/What kind of roles are you looking for in (.+?)\?/i);
+  if (needsTitle) {
+    const location = needsTitle[1].trim();
+    const title = cleanTitle(userMessage);
+    if (title) {
+      return await executeFollowUpSearch(title, location, userStatus, debug);
+    }
+  }
+
+  // Pattern 2: Bot asked for location — "Where are you looking for {title} roles?"
+  const needsLocation = bot.match(/Where are you looking for (.+?) roles?\?/i);
+  if (needsLocation) {
+    const title = needsLocation[1].trim();
+    const location = userMessage.trim();
+    if (location && location.length < 60) {
+      return await executeFollowUpSearch(title, location, userStatus, debug);
+    }
+  }
+
+  // Pattern 3: Bot asked for both — "What kind of roles are you looking for, and where?"
+  if (/What kind of roles are you looking for.+and where\?/i.test(bot)) {
+    const role = extractRole(userMessage);
+    const location = extractLocation(userMessage);
+    if (role && location) {
+      return await executeFollowUpSearch(role, location, userStatus, debug);
+    }
+  }
+
+  return null;
+}
+
+/** Strip filler words from a follow-up title answer */
+function cleanTitle(msg: string): string | null {
+  const cleaned = msg
+    .trim()
+    .replace(/^(i'm |i am |i want |i'd like |looking for |interested in )/i, "")
+    .replace(/\b(roles?|jobs?|positions?|openings?|opportunities)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 0 && cleaned.length < 60 ? cleaned : null;
+}
+
+/** Execute a search for the follow-up handler */
+async function executeFollowUpSearch(
+  title: string,
+  location: string,
+  userStatus?: UserStatusResponse,
+  debug?: DebugInfo,
+): Promise<ChatApiResponse> {
+  const displayTitle = properCase(title);
+  const displayLocation = properCase(location);
+  const raw = await searchJobs({ search: title, location });
+  const { jobs, total } = mapSearchResponse(raw);
+
+  if (debug) {
+    debug.toolUsed = "search_jobs";
+    debug.toolInput = { search: title, location };
+    debug.networkLogs = getNetworkLogs();
+  }
+
+  return {
+    botMessage: `I found ${total} ${displayTitle} job${total !== 1 ? "s" : ""} in ${displayLocation} for you.`,
+    actionType: "show_jobs",
+    data: { jobs, totalJobs: total },
+    suggestions: buildSuggestions("show_jobs"),
+    _debug: debug,
+  };
+}
+
 // ── Main entry point ──
 
 export async function processChat(
@@ -322,6 +411,12 @@ export async function processChat(
     const deterministic = await handleFirstMessage(userMessage, userStatus, debug);
     if (deterministic) return deterministic;
     // Not a job search intent — fall through to LLM
+  }
+
+  // ── Follow-up: bot previously asked for title/location → handle deterministically ──
+  if (!isFirstMessage) {
+    const followUp = await handleFollowUpSearch(userMessage, history, userStatus, debug);
+    if (followUp) return followUp;
   }
 
   // ── LangChain loop (subsequent messages + non-search first messages) ──
