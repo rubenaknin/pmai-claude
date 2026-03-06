@@ -1,39 +1,88 @@
 /**
  * PitchMeAI HTTP client — wraps all API calls to the PitchMeAI backend.
  * Attaches the AuthSession cookie for authentication.
+ * Captures network debug logs for monitoring.
  */
 
 import type {
   PitchMeSearchResponse,
   PitchMeResumeResponse,
   PitchMeEmailResponse,
+  DebugNetworkLog,
 } from "./types";
 
 const API_URL = process.env.PITCHMEAI_API_URL || "https://pitchmeai.com/api";
 const SESSION_COOKIE = process.env.PITCHMEAI_SESSION_COOKIE || "";
+
+/** Collected during a request cycle — call resetLogs() before a new cycle */
+let networkLogs: DebugNetworkLog[] = [];
+
+export function getNetworkLogs(): DebugNetworkLog[] {
+  return [...networkLogs];
+}
+
+export function resetNetworkLogs(): void {
+  networkLogs = [];
+}
 
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_URL}${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: `AuthSession=${SESSION_COOKIE}`,
-      ...options.headers,
-    },
-  });
+  const method = options.method || "GET";
+  const start = Date.now();
+  let status: number | null = null;
+  let responseText = "";
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `PitchMeAI API error: ${res.status} ${res.statusText} — ${text.slice(0, 200)}`
-    );
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `AuthSession=${SESSION_COOKIE}`,
+        ...options.headers,
+      },
+    });
+
+    status = res.status;
+    responseText = await res.text();
+    const durationMs = Date.now() - start;
+
+    networkLogs.push({
+      method,
+      url,
+      status,
+      durationMs,
+      requestBody: options.body ? String(options.body).slice(0, 500) : undefined,
+      responseSnippet: responseText.slice(0, 1000),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `PitchMeAI API error: ${res.status} ${res.statusText} — ${responseText.slice(0, 200)}`
+      );
+    }
+
+    return JSON.parse(responseText) as T;
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+
+    // Only push if we didn't already push above (non-ok responses already logged)
+    if (status === null) {
+      networkLogs.push({
+        method,
+        url,
+        status: null,
+        durationMs,
+        requestBody: options.body ? String(options.body).slice(0, 500) : undefined,
+        error: errMsg,
+      });
+    }
+
+    throw err;
   }
-
-  return res.json() as Promise<T>;
 }
 
 /** Search for jobs matching a query */

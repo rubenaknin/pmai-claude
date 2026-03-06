@@ -21,6 +21,24 @@ export type ActionType =
   | "general"
   | "error";
 
+export interface DebugNetworkLog {
+  method: string;
+  url: string;
+  status: number | null;
+  durationMs: number;
+  requestBody?: string;
+  responseSnippet?: string;
+  error?: string;
+}
+
+export interface DebugInfo {
+  toolUsed?: string;
+  toolInput?: Record<string, unknown>;
+  networkLogs: DebugNetworkLog[];
+  claudeModel?: string;
+  timestamp: string;
+}
+
 export interface ChatApiResponse {
   botMessage: string;
   actionType: ActionType;
@@ -33,6 +51,7 @@ export interface ChatApiResponse {
     bulkResults?: BulkResult[];
   };
   suggestions?: string[];
+  _debug?: DebugInfo;
 }
 
 export interface ResumeData {

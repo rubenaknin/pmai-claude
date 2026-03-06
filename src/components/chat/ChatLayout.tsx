@@ -13,7 +13,7 @@ import { EmailComposer } from "./EmailComposer";
 import { ApplicationStatusCard } from "./ApplicationStatusCard";
 import { ResumePreviewCard } from "./ResumePreviewCard";
 import { Job } from "./jobData";
-import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData } from "@/lib/types";
+import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData, DebugInfo } from "@/lib/types";
 
 const MOCK_CONVERSATIONS = [
   { id: "1", title: "Job Search — Frontend Engineer", active: true },
@@ -220,12 +220,13 @@ export function ChatLayout() {
 
   // --- Bot messaging helper ---
   const addBotMessage = useCallback(
-    (content: string, extra?: Partial<Message>) => {
+    (content: string, extra?: Partial<Message>, debug?: DebugInfo) => {
       const msg: Message = {
         id: `bot-${Date.now()}-${Math.random()}`,
         role: "bot",
         content,
         ...extra,
+        ...(debug ? { _debug: debug } : {}),
       };
       setMessages((prev) => [...prev, msg]);
       return msg;
@@ -389,6 +390,7 @@ export function ChatLayout() {
         ]);
 
         // Dispatch based on actionType
+        const debugInfo = data._debug;
         switch (data.actionType) {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
@@ -409,9 +411,9 @@ export function ChatLayout() {
                     onRemoveJob={handleRemoveJob}
                   />
                 ),
-              });
+              }, debugInfo);
             } else {
-              addBotMessage(data.botMessage);
+              addBotMessage(data.botMessage, undefined, debugInfo);
             }
             break;
           }
@@ -426,19 +428,17 @@ export function ChatLayout() {
                     highlights={data.data.resume.highlights}
                   />
                 ),
-              });
+              }, debugInfo);
             } else {
-              addBotMessage(data.botMessage);
+              addBotMessage(data.botMessage, undefined, debugInfo);
             }
             break;
           }
           case "show_email": {
             if (data.data?.email) {
               setEmailData(data.data.email);
-              addBotMessage(data.botMessage);
-            } else {
-              addBotMessage(data.botMessage);
             }
+            addBotMessage(data.botMessage, undefined, debugInfo);
             break;
           }
           case "bulk_apply_result": {
@@ -452,9 +452,9 @@ export function ChatLayout() {
               );
               addBotMessage(data.botMessage, {
                 customComponent: <ApplicationStatusCard jobCount={count} />,
-              });
+              }, debugInfo);
             } else {
-              addBotMessage(data.botMessage);
+              addBotMessage(data.botMessage, undefined, debugInfo);
             }
             break;
           }
@@ -471,14 +471,14 @@ export function ChatLayout() {
                 customComponent: (
                   <ApplicationStatusCard jobCount={count} emailsSent={true} />
                 ),
-              });
+              }, debugInfo);
             } else {
-              addBotMessage(data.botMessage);
+              addBotMessage(data.botMessage, undefined, debugInfo);
             }
             break;
           }
           default:
-            addBotMessage(data.botMessage);
+            addBotMessage(data.botMessage, undefined, debugInfo);
         }
 
         if (data.suggestions && data.suggestions.length > 0) {

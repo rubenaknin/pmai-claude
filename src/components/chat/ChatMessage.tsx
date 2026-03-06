@@ -3,6 +3,8 @@
 import { ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { TypingIndicator } from "./TypingIndicator";
+import { NetworkDebugPanel } from "./NetworkDebugPanel";
+import type { DebugInfo } from "@/lib/types";
 
 export type MessageRole = "bot" | "user";
 
@@ -12,6 +14,7 @@ export interface Message {
   content: string;
   customComponent?: ReactNode;
   isTyping?: boolean;
+  _debug?: DebugInfo;
 }
 
 interface ChatMessageProps {
@@ -49,6 +52,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
         {message.customComponent}
+        {isBot && message._debug && (
+          <NetworkDebugPanel debug={message._debug} />
+        )}
       </div>
       {!isBot && (
         <Avatar className="h-8 w-8 shrink-0">

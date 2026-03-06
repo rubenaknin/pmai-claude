@@ -5,16 +5,24 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { TOOLS, type ToolName } from "./claude-tools";
-import { searchJobs, generateResume, generateEmail } from "./pitchmeai-client";
+import {
+  searchJobs,
+  generateResume,
+  generateEmail,
+  getNetworkLogs,
+  resetNetworkLogs,
+} from "./pitchmeai-client";
 import { mapSearchResponse } from "./job-mapper";
 import type {
   ChatHistoryMessage,
   ChatApiResponse,
   ActionType,
+  DebugInfo,
 } from "./types";
-import type { Job } from "@/components/chat/jobData";
 
 const anthropic = new Anthropic();
+
+const MODEL = "claude-sonnet-4-5-20250929";
 
 const SYSTEM_PROMPT = `You are Nikki, PitchMeAI's friendly and efficient job application assistant.
 
@@ -39,6 +47,15 @@ export async function processChat(
   history: ChatHistoryMessage[],
   jobsContext?: string
 ): Promise<ChatApiResponse> {
+  // Reset network logs for this request cycle
+  resetNetworkLogs();
+
+  const debug: DebugInfo = {
+    networkLogs: [],
+    claudeModel: MODEL,
+    timestamp: new Date().toISOString(),
+  };
+
   // Build messages array for Claude
   const messages: Anthropic.Messages.MessageParam[] = history.map((m) => ({
     role: m.role,
@@ -57,7 +74,7 @@ export async function processChat(
   try {
     // First Claude call — may return tool_use
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: MODEL,
       max_tokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
@@ -74,16 +91,22 @@ export async function processChat(
       const textBlock = response.content.find(
         (b): b is Anthropic.Messages.TextBlock => b.type === "text"
       );
+      debug.networkLogs = getNetworkLogs();
       return {
         botMessage: textBlock?.text || "I'm not sure how to help with that. Could you rephrase?",
         actionType: "general",
         suggestions: [],
+        _debug: debug,
       };
     }
 
     // Execute the tool call
     const toolName = toolUseBlock.name as ToolName;
     const toolInput = toolUseBlock.input as Record<string, unknown>;
+
+    debug.toolUsed = toolName;
+    debug.toolInput = toolInput;
+
     const { toolResult, actionType, data } = await executeTool(
       toolName,
       toolInput
@@ -91,7 +114,7 @@ export async function processChat(
 
     // Send tool result back to Claude for a natural language response
     const followUp = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: MODEL,
       max_tokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
@@ -117,18 +140,23 @@ export async function processChat(
 
     const suggestions = buildSuggestions(actionType);
 
+    debug.networkLogs = getNetworkLogs();
+
     return {
       botMessage: finalText?.text || "Done! Let me know if you need anything else.",
       actionType,
       data,
       suggestions,
+      _debug: debug,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("processChat error:", message);
+    debug.networkLogs = getNetworkLogs();
     return {
       botMessage: `Sorry, I ran into an issue: ${message}. Please try again.`,
       actionType: "error",
+      _debug: debug,
     };
   }
 }
