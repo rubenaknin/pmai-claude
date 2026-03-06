@@ -10,7 +10,7 @@ interface ChatJobCardsProps {
   onEmailHM: (job: Job) => void;
   onViewDetail: (job: Job) => void;
   onMatchResume: (job: Job) => void;
-  matchingJobId?: string | null;
+  matchingJobIds?: Set<string>;
 }
 
 export function ChatJobCards({
@@ -20,7 +20,7 @@ export function ChatJobCards({
   onEmailHM,
   onViewDetail,
   onMatchResume,
-  matchingJobId,
+  matchingJobIds,
 }: ChatJobCardsProps) {
   const displayed = jobs.slice(0, 5);
   const remaining = totalJobs - displayed.length;
@@ -39,7 +39,7 @@ export function ChatJobCards({
             onEmailHM={onEmailHM}
             onViewDetail={onViewDetail}
             onMatchResume={onMatchResume}
-            matchingJobId={matchingJobId}
+            matchingJobIds={matchingJobIds}
           />
         ))}
       </div>

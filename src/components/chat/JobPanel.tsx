@@ -6,6 +6,7 @@ import { JobCard } from "./JobCard";
 import { Job } from "./jobData";
 
 type SortOption = "relevance" | "recent" | "near-me";
+type FilterOption = "all" | "resume-generated" | "no-resume" | "email-sent" | "applied";
 
 const SORT_LABELS: Record<SortOption, string> = {
   relevance: "Relevance",
@@ -26,7 +27,7 @@ interface JobPanelProps {
   onRemoveJob: (jobId: string, mode: "single" | "title" | "location") => void;
   onClose: () => void;
   onMatchResume?: (job: Job) => void;
-  matchingJobId?: string | null;
+  matchingJobIds?: Set<string>;
   selectedJobIds?: Set<string>;
   onToggleSelect?: (jobId: string) => void;
   onSelectAll?: () => void;
@@ -44,18 +45,54 @@ export function JobPanel({
   onRemoveJob,
   onClose,
   onMatchResume,
-  matchingJobId,
+  matchingJobIds,
   selectedJobIds,
   onToggleSelect,
   onSelectAll,
   onClearSelection,
 }: JobPanelProps) {
   const [sort, setSort] = useState<SortOption>("relevance");
+  const [filter, setFilter] = useState<FilterOption>("all");
   const [page, setPage] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const sortedJobs = useMemo(() => {
-    const copy = [...jobs];
+  // Filter counts
+  const filterCounts = useMemo(() => ({
+    all: jobs.length,
+    "resume-generated": jobs.filter((j) => j.status.resumeGenerated).length,
+    "no-resume": jobs.filter((j) => !j.status.resumeGenerated).length,
+    "email-sent": jobs.filter((j) => j.status.emailSent).length,
+    applied: jobs.filter((j) => j.status.applied).length,
+  }), [jobs]);
+
+  const FILTER_LABELS: Record<FilterOption, string> = {
+    all: "All",
+    "resume-generated": "Resume generated",
+    "no-resume": "No resume",
+    "email-sent": "Email sent",
+    applied: "Applied",
+  };
+
+  const filteredAndSortedJobs = useMemo(() => {
+    // Filter first
+    let filtered = [...jobs];
+    switch (filter) {
+      case "resume-generated":
+        filtered = filtered.filter((j) => j.status.resumeGenerated);
+        break;
+      case "no-resume":
+        filtered = filtered.filter((j) => !j.status.resumeGenerated);
+        break;
+      case "email-sent":
+        filtered = filtered.filter((j) => j.status.emailSent);
+        break;
+      case "applied":
+        filtered = filtered.filter((j) => j.status.applied);
+        break;
+    }
+
+    // Then sort
+    const copy = filtered;
     if (sort === "recent") {
       copy.sort((a, b) => {
         const order: Record<string, number> = {
@@ -78,10 +115,10 @@ export function JobPanel({
       });
     }
     return copy;
-  }, [jobs, sort]);
+  }, [jobs, sort, filter]);
 
-  const totalPages = Math.ceil(sortedJobs.length / PAGE_SIZE);
-  const pageJobs = sortedJobs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(filteredAndSortedJobs.length / PAGE_SIZE);
+  const pageJobs = filteredAndSortedJobs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const allApplied = jobs.every((j) => j.status.applied);
   const selectionCount = selectedJobIds?.size || 0;
   const hasSelection = selectionCount > 0;
@@ -106,7 +143,7 @@ export function JobPanel({
           <div>
             <h2 className="text-sm font-semibold">Matching Jobs</h2>
             <p className="text-[11px] text-muted-foreground">
-              {sortedJobs.length} of {totalJobs} matches
+              {filteredAndSortedJobs.length} of {totalJobs} matches
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -176,6 +213,27 @@ export function JobPanel({
             </div>
           )}
         </div>
+
+        {/* Filter pills */}
+        <div className="flex gap-1.5 flex-wrap">
+          {(Object.keys(FILTER_LABELS) as FilterOption[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => {
+                setFilter(key);
+                setPage(0);
+                scrollToTop();
+              }}
+              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                filter === key
+                  ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {FILTER_LABELS[key]} ({filterCounts[key]})
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Job list */}
@@ -194,7 +252,7 @@ export function JobPanel({
               onEmailHM={onEmailHM}
               onRemoveJob={onRemoveJob}
               onMatchResume={onMatchResume}
-              matchingJobId={matchingJobId}
+              matchingJobIds={matchingJobIds}
               isSelected={selectedJobIds?.has(job.id)}
               onToggleSelect={onToggleSelect}
               compact

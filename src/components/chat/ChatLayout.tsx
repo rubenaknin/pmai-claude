@@ -72,7 +72,19 @@ export function ChatLayout() {
 
   // Resume preview data
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
-  const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+  const [matchingJobIds, setMatchingJobIds] = useState<Set<string>>(new Set());
+
+  const addMatchingId = useCallback((id: string) => {
+    setMatchingJobIds((prev) => new Set(prev).add(id));
+  }, []);
+
+  const removeMatchingId = useCallback((id: string) => {
+    setMatchingJobIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   // Job selection state
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
@@ -213,6 +225,10 @@ export function ChatLayout() {
               company: job.company,
               threeExplanations: data.threeExplanations,
             });
+            updateJob(jobId, (j) => ({
+              ...j,
+              status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
+            }));
           }
         } catch (err) {
           console.error("Resume generation failed:", err);
@@ -464,11 +480,11 @@ export function ChatLayout() {
     [handleFileUpload]
   );
 
-  // --- Match my resume ---
+  // --- Match my resume (core — returns result, does NOT post bot messages) ---
   const handleMatchResume = useCallback(
-    async (job: Job) => {
-      if (!job._apiData?.url || !job._apiData?.jobId) return;
-      setMatchingJobId(job.id);
+    async (job: Job): Promise<{ success: boolean; data?: Record<string, unknown> }> => {
+      if (!job._apiData?.url || !job._apiData?.jobId) return { success: false };
+      addMatchingId(job.id);
 
       try {
         const res = await fetch("/api/resume/generate", {
@@ -493,39 +509,101 @@ export function ChatLayout() {
             company: job.company,
             threeExplanations: data.threeExplanations,
           });
-          addBotMessage(
-            `Here's your resume tailored for ${job.title} at ${job.company}:`,
-            {
-              customComponent: (
-                <ResumePreviewCard
-                  jobTitle={job.title}
-                  company={job.company}
-                  highlights={
-                    data.threeExplanations
-                      ? [
-                          data.threeExplanations.summary,
-                          data.threeExplanations.keywords_added?.length
-                            ? `Keywords added: ${data.threeExplanations.keywords_added.join(", ")}`
-                            : undefined,
-                          data.threeExplanations.soft_skills
-                            ? `Soft skills: ${data.threeExplanations.soft_skills}`
-                            : undefined,
-                        ].filter(Boolean) as string[]
-                      : undefined
-                  }
-                />
-              ),
-            }
-          );
+          updateJob(job.id, (j) => ({
+            ...j,
+            status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
+          }));
+          return { success: true, data };
         }
+        return { success: false };
       } catch (err) {
         console.error("Match resume failed:", err);
-        addBotMessage("Sorry, I couldn't generate the tailored resume. Please try again.");
+        return { success: false };
       } finally {
-        setMatchingJobId(null);
+        removeMatchingId(job.id);
       }
     },
-    [addBotMessage]
+    [addMatchingId, removeMatchingId, updateJob]
+  );
+
+  // --- Match resume for a single job card click (posts bot message) ---
+  const handleMatchResumeSingle = useCallback(
+    async (job: Job) => {
+      const result = await handleMatchResume(job);
+      if (result.success && result.data) {
+        const data = result.data as { threeExplanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string } };
+        addBotMessage(
+          `Here's your resume tailored for ${job.title} at ${job.company}:`,
+          {
+            customComponent: (
+              <ResumePreviewCard
+                jobTitle={job.title}
+                company={job.company}
+                highlights={
+                  data.threeExplanations
+                    ? [
+                        data.threeExplanations.summary,
+                        data.threeExplanations.keywords_added?.length
+                          ? `Keywords added: ${data.threeExplanations.keywords_added.join(", ")}`
+                          : undefined,
+                        data.threeExplanations.soft_skills
+                          ? `Soft skills: ${data.threeExplanations.soft_skills}`
+                          : undefined,
+                      ].filter(Boolean) as string[]
+                    : undefined
+                }
+              />
+            ),
+          }
+        );
+      } else if (!result.success) {
+        addBotMessage("Sorry, I couldn't generate the tailored resume. Please try again.");
+      }
+    },
+    [handleMatchResume, addBotMessage]
+  );
+
+  // --- Match resume for all selected jobs ---
+  const handleMatchResumeForSelected = useCallback(
+    async (selectedJobs: Job[]) => {
+      if (selectedJobs.length === 0) return;
+
+      // Show spinners on all at once
+      for (const job of selectedJobs) {
+        addMatchingId(job.id);
+      }
+
+      addBotMessage(
+        `Matching your resume for ${selectedJobs.length} selected job${selectedJobs.length !== 1 ? "s" : ""}...`
+      );
+
+      let successCount = 0;
+      let failCount = 0;
+
+      // Process sequentially
+      for (const job of selectedJobs) {
+        const result = await handleMatchResume(job);
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+          // Remove spinner for jobs without api data (handleMatchResume won't call removeMatchingId for those)
+          removeMatchingId(job.id);
+        }
+      }
+
+      // Post summary
+      if (failCount === 0) {
+        addBotMessage(
+          `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.`
+        );
+      } else {
+        addBotMessage(
+          `Finished: ${successCount} matched successfully, ${failCount} failed. You can retry the failed ones individually.`
+        );
+      }
+    },
+    [addMatchingId, removeMatchingId, handleMatchResume, addBotMessage]
   );
 
   // --- Apply all ---
@@ -721,11 +799,9 @@ export function ChatLayout() {
       if (lower.includes("match resume for selected")) {
         if (selectedJobs.length > 0) {
           setIsTyping(false);
-          const firstSelected = selectedJobs[0];
+          const snapshot = [...selectedJobs];
           clearSelection();
-          if (firstSelected) {
-            await handleMatchResume(firstSelected);
-          }
+          await handleMatchResumeForSelected(snapshot);
           return;
         }
       }
@@ -793,8 +869,8 @@ export function ChatLayout() {
                       onApply={handleApplySingle}
                       onEmailHM={handleOpenEmail}
                       onViewDetail={handleViewDetail}
-                      onMatchResume={handleMatchResume}
-                      matchingJobId={matchingJobId}
+                      onMatchResume={handleMatchResumeSingle}
+                      matchingJobIds={matchingJobIds}
                     />
                   ),
                 }, debugInfo);
@@ -897,7 +973,7 @@ export function ChatLayout() {
       handleViewDetail,
       handleOpenEmail,
       handleRemoveJob,
-      handleMatchResume,
+      handleMatchResumeForSelected,
       userStatus,
       selectedJobs,
       selectedJobIds,
@@ -971,8 +1047,8 @@ export function ChatLayout() {
                         onApply={handleApplySingle}
                         onEmailHM={handleOpenEmail}
                         onViewDetail={handleViewDetail}
-                        onMatchResume={handleMatchResume}
-                        matchingJobId={matchingJobId}
+                        onMatchResume={handleMatchResumeSingle}
+                        matchingJobIds={matchingJobIds}
                       />
                     ),
                   },
@@ -1176,8 +1252,8 @@ export function ChatLayout() {
           onEmailHM={handleOpenEmail}
           onRemoveJob={handleRemoveJob}
           onClose={() => setShowJobPanel(false)}
-          onMatchResume={handleMatchResume}
-          matchingJobId={matchingJobId}
+          onMatchResume={handleMatchResumeSingle}
+          matchingJobIds={matchingJobIds}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}
           onSelectAll={selectAllJobs}

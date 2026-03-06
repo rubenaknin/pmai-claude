@@ -7,6 +7,8 @@ export interface JobStatus {
   hiringManagerTitle: string | null;
   emailSent: boolean;
   emailSentAt: string | null;
+  resumeGenerated: boolean;
+  resumeGeneratedAt: string | null;
   saved: boolean;
 }
 
@@ -45,6 +47,8 @@ export const defaultStatus = (): JobStatus => ({
   hiringManagerTitle: null,
   emailSent: false,
   emailSentAt: null,
+  resumeGenerated: false,
+  resumeGeneratedAt: null,
   saved: false,
 });
 

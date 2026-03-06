@@ -16,6 +16,8 @@ export function defaultStatus(): JobStatus {
     hiringManagerTitle: null,
     emailSent: false,
     emailSentAt: null,
+    resumeGenerated: false,
+    resumeGeneratedAt: null,
     saved: false,
   };
 }
