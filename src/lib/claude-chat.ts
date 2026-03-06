@@ -48,6 +48,8 @@ const llm = new ChatAnthropic({
 function buildSystemPrompt(userIp?: string, userStatus?: UserStatusResponse): string {
   let prompt = `You are Nikki, PitchMeAI's friendly and efficient job application assistant.
 
+You will receive the latest message sent by the user and the conversation history. Your goal is to determine if you need to perform an action (using a tool) and if so which one (and use it correctly), or to simply answer the user conversationally. The goal of this chatbot is to eventually push users to take action: apply to jobs on their behalf, generate personalized resumes for these jobs, and send emails to hiring managers for the jobs.
+
 Your capabilities:
 - Search for jobs matching a user's skills, preferences, and location
 - Generate tailored resumes for specific job applications
@@ -77,13 +79,6 @@ RESUME & EMAIL GENERATION:
 - These come from the _apiData field of jobs returned by search results
 - When the user says "apply for job #3", look up that job from the search results context
 - The resume/email generation costs the user 1 credit — mention this if relevant
-
-WHEN NOT TO USE TOOLS — this is critical:
-- If the user asks a QUESTION (anything ending with "?" or starting with "do you", "can you", "have you", "what", "how", "why", "where", "who", "is there", "don't you"), respond conversationally — do NOT call any tools
-- Questions about resume, profile, or account (e.g. "you don't have my resume?", "do you know my name?", "what info do you have about me?") should NEVER trigger a job search — just answer based on the USER PROFILE section above
-- If the user is chatting, asking for help, thanking you, greeting, or making a comment — respond naturally without calling any tool
-- Only call search_jobs or get_job_recommendations when the user explicitly asks you to FIND or SEARCH for jobs
-- When in doubt, respond conversationally rather than searching
 
 Guidelines:
 - Be conversational, helpful, and concise
@@ -181,40 +176,6 @@ function isJobSearchIntent(message: string): boolean {
   if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay)\b/i.test(lower)) return false;
   if (/\b(my resume|my cv|my profile|my account)\b/i.test(lower) && !/\b(find|search|match)\b/i.test(lower)) return false;
   // Default: treat short vague messages as conversational
-  return false;
-}
-
-/**
- * Determine whether this message needs tools at all.
- * Returns true for purely conversational messages that should NEVER trigger tool calls.
- * This is the architectural gate — if true, the LLM is invoked WITHOUT tools bound.
- */
-function isConversational(message: string, hasHistory: boolean): boolean {
-  const lower = message.toLowerCase().trim();
-
-  // Questions (ends with ?)
-  if (/\?$/.test(lower)) return true;
-
-  // Starts with question words
-  if (/^(do you|don't you|dont you|can you|could you|have you|did you|are you|is there|what|how|why|where|when|who|which)\b/i.test(lower)) return true;
-
-  // Pure greetings/thanks with no follow-up content
-  if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay|cool|great|nice|awesome|got it)([.!]?\s*)$/i.test(lower)) return true;
-
-  // Resume/profile/account questions without action verbs
-  if (/\b(my resume|my cv|my profile|my account|my info|my data|about me)\b/i.test(lower) && !/\b(find|search|match|apply|generate|create|tailor|send|email)\b/i.test(lower)) return true;
-
-  // Explicit action verbs → needs tools
-  if (/\b(find|search|look for|get me|show me|apply|email|generate|match|tailor|send)\b/i.test(lower)) return false;
-
-  // If there's conversation history, short messages are likely follow-up answers
-  // (e.g. "NYC", "frontend engineer", "yes") — let tools be available
-  if (hasHistory) return false;
-
-  // First message, no action intent, short → conversational
-  if (lower.split(/\s+/).length <= 4 && !/\b(find|search|apply|email|jobs?|resume)\b/i.test(lower)) return true;
-
-  // Default: not conversational, let tools be available
   return false;
 }
 
@@ -330,23 +291,27 @@ export async function processChat(
     ? `${systemPrompt}\n\nCurrent jobs the user is looking at:\n${jobsContext}`
     : systemPrompt;
 
-  // Convert history + new message to LangChain message types
+  // Build the user message with latest message + conversation thread
   const messages: BaseMessage[] = [new SystemMessage(fullSystemPrompt)];
-  for (const m of history) {
-    messages.push(m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content));
-  }
-  messages.push(new HumanMessage(userMessage));
 
-  // Gate: only bind tools when the message could require an action.
-  // Conversational messages get the plain LLM — zero chance of spurious tool calls.
-  const conversational = isConversational(userMessage, history.length > 0);
-  const model = conversational ? llm : llm.bindTools(TOOLS);
+  // Format conversation thread (most recent first) for context
+  let userContent = `Latest message sent by user = ${userMessage}`;
+  if (history.length > 0) {
+    const threadLines = [...history]
+      .reverse()
+      .map((m) => `${m.role === "user" ? "User" : "Nikki"}: ${m.content}`);
+    userContent += `\n\nConversation thread (from last to first) =\n${threadLines.join("\n")}`;
+  }
+  messages.push(new HumanMessage(userContent));
+
+  // Always bind tools — the LLM has full conversation context to decide what to do
+  const model = llm.bindTools(TOOLS);
 
   try {
     let currentMessages = [...messages];
     let finalActionType: ActionType = "general";
     let finalData: ChatApiResponse["data"] | undefined;
-    const MAX_ITERATIONS = conversational ? 1 : 5;
+    const MAX_ITERATIONS = 5;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const response = await model.invoke(currentMessages);
@@ -361,10 +326,6 @@ export async function processChat(
               .filter((b) => b.type === "text")
               .map((b) => b.text || "")
               .join("");
-
-        // Strip any XML tool call attempts that Claude may emit as text
-        // (happens when tools aren't bound but Claude still tries to call them)
-        text = text.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/g, "").trim();
 
         debug.networkLogs = getNetworkLogs();
         return {
