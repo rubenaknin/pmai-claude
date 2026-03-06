@@ -20,6 +20,19 @@ async function fetchWithAuth(path: string): Promise<Record<string, unknown> | nu
   }
 }
 
+/** Pick the best human-readable first name, ignoring emails and IDs */
+function pickName(data: Record<string, unknown>): string | undefined {
+  for (const key of ["firstName", "first_name"]) {
+    const v = data[key];
+    if (typeof v === "string" && v.length > 0 && !v.includes("@")) return v;
+  }
+  // data.name is often the CouchDB username (email) — only use if it looks like a real name
+  if (typeof data.name === "string" && data.name.length > 0 && !data.name.includes("@") && !data.name.includes(".")) {
+    return data.name;
+  }
+  return undefined;
+}
+
 export async function GET() {
   if (!SESSION_COOKIE) {
     return NextResponse.json({ isLoggedIn: false } satisfies UserStatusResponse);
@@ -44,7 +57,7 @@ export async function GET() {
   const result: UserStatusResponse = {
     isLoggedIn: true,
     hasResume,
-    userFirstName: (data.firstName || data.first_name || data.name || undefined) as string | undefined,
+    userFirstName: pickName(data),
     dynamicTitle: (data.dynamicTitle || data.dynamic_title || data.title || undefined) as string | undefined,
     dynamicLocation: (data.dynamicLocation || data.dynamic_location || data.location || undefined) as string | undefined,
     credits: typeof data.credits === "number" ? data.credits : undefined,

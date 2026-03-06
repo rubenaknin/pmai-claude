@@ -1,10 +1,21 @@
 /**
- * Core chat orchestration:
- * User message + history → Claude with tools → execute tool calls → tool_result → final response
- * Supports multi-turn tool use (e.g. search_jobs → generate_resume in one turn).
+ * Core chat orchestration using LangChain + Anthropic.
+ *
+ * First message: handled deterministically in code.
+ *   - User specifies a role explicitly → search immediately (no LLM needed)
+ *   - User is vague → ask for clarification (no LLM needed)
+ *
+ * Subsequent messages: LangChain ChatAnthropic with tool calling.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { ChatAnthropic } from "@langchain/anthropic";
+import {
+  HumanMessage,
+  AIMessage,
+  SystemMessage,
+  ToolMessage,
+  type BaseMessage,
+} from "@langchain/core/messages";
 import { TOOLS, type ToolName } from "./claude-tools";
 import {
   searchJobs,
@@ -23,11 +34,18 @@ import type {
   UserStatusResponse,
 } from "./types";
 
-const anthropic = new Anthropic();
-
 const MODEL = "claude-sonnet-4-5-20250929";
 
-function buildSystemPrompt(userIp?: string, userStatus?: UserStatusResponse, isFirstMessage?: boolean): string {
+// ── LangChain model (created once, reused) ──
+
+const llm = new ChatAnthropic({
+  model: MODEL,
+  maxTokens: 1024,
+});
+
+// ── System prompt builder ──
+
+function buildSystemPrompt(userIp?: string, userStatus?: UserStatusResponse): string {
   let prompt = `You are Nikki, PitchMeAI's friendly and efficient job application assistant.
 
 Your capabilities:
@@ -64,7 +82,6 @@ Guidelines:
 - Never make up job listings — only show real results from the search tool
 - When no tool is needed (general questions, chitchat), just respond naturally`;
 
-  // Inject user profile context
   if (userStatus) {
     const parts: string[] = [];
     if (userStatus.isLoggedIn) parts.push("User is logged in.");
@@ -77,15 +94,124 @@ Guidelines:
     }
   }
 
-  // Note: First-message responses are handled in code (buildFirstMessageResponse),
-  // so Claude only ever handles the second message onward where tools are available.
-
   if (userIp) {
     prompt += `\n\nUser's IP address (for approximate geolocation if no location specified): ${userIp}`;
   }
 
   return prompt;
 }
+
+// ── NLP helpers for first-message parsing ──
+
+/** Extract an explicit job role from the message. Returns null if the user didn't specify one. */
+function extractRole(message: string): string | null {
+  const patterns = [
+    // "find me marketing roles in paris", "search for frontend engineer jobs"
+    /(?:find|search|look|get|show)\s+(?:me\s+)?(?:some\s+)?(.+?)\s+(?:jobs?|roles?|positions?|openings?|opportunities)\b/i,
+    // "looking for data scientist positions"
+    /(?:looking\s+for|interested\s+in)\s+(.+?)\s+(?:jobs?|roles?|positions?)\b/i,
+    // "I want a marketing job in paris"
+    /(?:i\s+want|i\s+need|i\'d\s+like)\s+(?:a\s+)?(.+?)\s+(?:jobs?|roles?|positions?)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      let role = match[1].trim();
+      // Strip leading filler words
+      role = role.replace(/^(some|any|a|the|good|great|new|best|more|few)\s+/i, "").trim();
+      if (role.length > 1 && role.length < 60) {
+        return role;
+      }
+    }
+  }
+  return null;
+}
+
+/** Extract a location from the message (e.g. "in New York" → "New York") */
+function extractLocation(message: string): string | null {
+  const match = message.match(/\b(?:in|near|around|at)\s+(.+?)(?:\s*[.!?]?\s*$)/i);
+  if (match) {
+    const loc = match[1].replace(/\s*(please|thanks|thank you|asap|now)$/i, "").trim();
+    if (loc.length > 0 && loc.length < 60) return loc;
+  }
+  return null;
+}
+
+// ── First-message handler (deterministic, no LLM) ──
+
+async function handleFirstMessage(
+  userMessage: string,
+  userStatus?: UserStatusResponse,
+  debug?: DebugInfo,
+): Promise<ChatApiResponse> {
+  const name = userStatus?.userFirstName;
+  const profileTitle = userStatus?.dynamicTitle;
+  const hasResume = userStatus?.hasResume;
+  const isLoggedIn = userStatus?.isLoggedIn;
+
+  const role = extractRole(userMessage);
+  const location = extractLocation(userMessage);
+  const greeting = name ? `Sure, ${name}!` : "Sure!";
+
+  // ── Case 1: User explicitly specified a role → search immediately ──
+  if (role) {
+    const raw = await searchJobs({ search: role, location: location || undefined });
+    const { jobs, total } = mapSearchResponse(raw);
+
+    if (debug) {
+      debug.toolUsed = "search_jobs";
+      debug.toolInput = { search: role, location };
+      debug.networkLogs = getNetworkLogs();
+    }
+
+    const locationLabel = location ? ` in ${location}` : "";
+    return {
+      botMessage: `${greeting} I found ${total} ${role} job${total !== 1 ? "s" : ""}${locationLabel} for you.`,
+      actionType: "show_jobs",
+      data: { jobs, totalJobs: total },
+      suggestions: buildSuggestions("show_jobs"),
+      _debug: debug,
+    };
+  }
+
+  // ── Case 2: No explicit role — user has a profile title → confirm ──
+  if (isLoggedIn && hasResume && profileTitle) {
+    if (location) {
+      return {
+        botMessage: `${greeting} Should I look for ${profileTitle} roles in ${location}?`,
+        actionType: "general",
+        suggestions: [`Yes, find ${profileTitle} jobs in ${location}`, "No, a different role"],
+        _debug: debug,
+      };
+    }
+    return {
+      botMessage: `${greeting} Should I look for ${profileTitle} roles?`,
+      actionType: "general",
+      suggestions: [`Yes, find ${profileTitle} jobs`, "No, a different role"],
+      _debug: debug,
+    };
+  }
+
+  // ── Case 3: No role, no profile title → ask for details ──
+  if (location) {
+    return {
+      botMessage: `${greeting} Any specific type of jobs I should look for in ${location}? You can also upload your resume so I can get to know you better.`,
+      actionType: "general",
+      suggestions: ["Upload my resume"],
+      _debug: debug,
+    };
+  }
+
+  return {
+    botMessage: `${greeting} What kind of roles are you looking for? You can also upload your resume so I can get to know you better.`,
+    actionType: "general",
+    suggestions: ["Upload my resume"],
+    _debug: debug,
+  };
+}
+
+// ── Main entry point ──
 
 export async function processChat(
   userMessage: string,
@@ -94,7 +220,6 @@ export async function processChat(
   userIp?: string,
   userStatus?: UserStatusResponse
 ): Promise<ChatApiResponse> {
-  // Reset per-request state
   resetNetworkLogs();
 
   const debug: DebugInfo = {
@@ -103,104 +228,86 @@ export async function processChat(
     timestamp: new Date().toISOString(),
   };
 
-  // Build messages array for Claude
-  const messages: Anthropic.Messages.MessageParam[] = history.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
-
   const isFirstMessage = history.length === 0;
-  let systemPrompt = buildSystemPrompt(userIp, userStatus, isFirstMessage);
-  if (jobsContext) {
-    systemPrompt += `\n\nCurrent jobs the user is looking at:\n${jobsContext}`;
-  }
 
-  messages.push({ role: "user", content: userMessage });
-
-  // ── FIRST MESSAGE: handle entirely in code, no Claude call ──
+  // ── First message: deterministic handler ──
   if (isFirstMessage) {
-    debug.networkLogs = getNetworkLogs();
-    return buildFirstMessageResponse(userMessage, userStatus, debug);
+    return handleFirstMessage(userMessage, userStatus, debug);
   }
+
+  // ── Subsequent messages: LangChain agentic loop ──
+  const systemPrompt = buildSystemPrompt(userIp, userStatus);
+  const fullSystemPrompt = jobsContext
+    ? `${systemPrompt}\n\nCurrent jobs the user is looking at:\n${jobsContext}`
+    : systemPrompt;
+
+  // Convert history + new message to LangChain message types
+  const messages: BaseMessage[] = [new SystemMessage(fullSystemPrompt)];
+  for (const m of history) {
+    messages.push(m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content));
+  }
+  messages.push(new HumanMessage(userMessage));
+
+  // Bind tools to model
+  const modelWithTools = llm.bindTools(TOOLS);
 
   try {
-    // Agentic loop — keep calling Claude until it stops using tools (max 5 iterations)
     let currentMessages = [...messages];
     let finalActionType: ActionType = "general";
     let finalData: ChatApiResponse["data"] | undefined;
-    let iterations = 0;
     const MAX_ITERATIONS = 5;
 
-    while (iterations < MAX_ITERATIONS) {
-      iterations++;
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const response = await modelWithTools.invoke(currentMessages);
 
-      const response = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools: TOOLS,
-        messages: currentMessages,
-      });
+      // Check for tool calls
+      const toolCalls = response.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) {
+        // No tool calls — extract final text
+        const text = typeof response.content === "string"
+          ? response.content
+          : (response.content as Array<{ type: string; text?: string }>)
+              .filter((b) => b.type === "text")
+              .map((b) => b.text || "")
+              .join("");
 
-      const toolUseBlock = response.content.find(
-        (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
-      );
-
-      if (!toolUseBlock) {
-        // No more tool calls — extract final text
-        const textBlock = response.content.find(
-          (b): b is Anthropic.Messages.TextBlock => b.type === "text"
-        );
         debug.networkLogs = getNetworkLogs();
-        const suggestions = buildSuggestions(finalActionType);
         return {
-          botMessage: textBlock?.text || "I'm not sure how to help with that. Could you rephrase?",
+          botMessage: text || "I'm not sure how to help with that. Could you rephrase?",
           actionType: finalActionType,
           data: finalData,
-          suggestions,
+          suggestions: buildSuggestions(finalActionType),
           _debug: debug,
         };
       }
 
-      // Execute the tool call
-      const toolName = toolUseBlock.name as ToolName;
-      const toolInput = toolUseBlock.input as Record<string, unknown>;
+      // Execute each tool call (typically one per iteration)
+      const toolCall = toolCalls[0];
+      const toolName = toolCall.name as ToolName;
+      const toolInput = (toolCall.args || {}) as Record<string, unknown>;
 
-      // Track tool for debug
-      if (!debug.toolUsed) {
-        debug.toolUsed = toolName;
-        debug.toolInput = toolInput;
-      } else {
-        debug.toolUsed = toolName;
-        debug.toolInput = toolInput;
-      }
+      debug.toolUsed = toolName;
+      debug.toolInput = toolInput;
 
       const { toolResult, actionType, data } = await executeTool(toolName, toolInput);
 
-      // Update final action/data if this tool produced meaningful output
       if (actionType !== "general" || !finalData) {
         finalActionType = actionType;
         finalData = data ?? finalData;
       }
 
-      // Append assistant response + tool result, continue the loop
+      // Append assistant response + tool result for the next iteration
       currentMessages = [
         ...currentMessages,
-        { role: "assistant" as const, content: response.content },
-        {
-          role: "user" as const,
-          content: [
-            {
-              type: "tool_result" as const,
-              tool_use_id: toolUseBlock.id,
-              content: JSON.stringify(toolResult),
-            },
-          ],
-        },
+        response,
+        new ToolMessage({
+          content: JSON.stringify(toolResult),
+          tool_call_id: toolCall.id!,
+        }),
       ];
     }
 
-    // If we hit max iterations, return what we have
+    // Max iterations reached
     debug.networkLogs = getNetworkLogs();
     return {
       botMessage: "I've completed the search. Let me know if you need anything else.",
@@ -221,60 +328,7 @@ export async function processChat(
   }
 }
 
-/** Extract a location from the user's message (e.g. "find me jobs in New York" → "New York") */
-function extractLocation(message: string): string | null {
-  const match = message.match(/\b(?:in|near|around|at)\s+(.+?)(?:\s*[.!?]?\s*$)/i);
-  if (match) {
-    // Clean up: remove trailing filler words
-    const loc = match[1].replace(/\s*(please|thanks|thank you|asap|now)$/i, "").trim();
-    if (loc.length > 0 && loc.length < 60) return loc;
-  }
-  return null;
-}
-
-/** Build a deterministic first-message response — no Claude API call needed */
-function buildFirstMessageResponse(
-  userMessage: string,
-  userStatus?: UserStatusResponse,
-  debug?: DebugInfo,
-): ChatApiResponse {
-  const name = userStatus?.userFirstName;
-  const title = userStatus?.dynamicTitle;
-  const hasResume = userStatus?.hasResume;
-  const isLoggedIn = userStatus?.isLoggedIn;
-  const location = extractLocation(userMessage);
-
-  let botMessage: string;
-  let suggestions: string[];
-
-  if (isLoggedIn && hasResume && title) {
-    // Scenario 2: We know their title — confirm before searching
-    const greeting = name ? `Sure, ${name}!` : "Sure!";
-    if (location) {
-      botMessage = `${greeting} Should I look for ${title} roles in ${location}?`;
-      suggestions = [`Yes, find ${title} jobs in ${location}`, "No, a different role"];
-    } else {
-      botMessage = `${greeting} Should I look for ${title} roles?`;
-      suggestions = [`Yes, find ${title} jobs`, "No, a different role"];
-    }
-  } else {
-    // Scenario 1 & 3: No resume/title — ask for details
-    const greeting = name ? `Sure, ${name}!` : "Sure!";
-    if (location) {
-      botMessage = `${greeting} Any specific type of jobs I should look for in ${location}? You can also upload your resume so I can get to know you better.`;
-    } else {
-      botMessage = `${greeting} What kind of roles are you looking for? You can also upload your resume so I can get to know you better.`;
-    }
-    suggestions = ["Upload my resume"];
-  }
-
-  return {
-    botMessage,
-    actionType: "general",
-    suggestions,
-    _debug: debug,
-  };
-}
+// ── Tool execution ──
 
 async function executeTool(
   toolName: ToolName,
@@ -289,19 +343,7 @@ async function executeTool(
       const raw = await getJobRecommendations();
       const { jobs, total } = mapSearchResponse(raw);
       return {
-        toolResult: {
-          found: total,
-          showing: jobs.length,
-          jobs: jobs.map((j) => ({
-            id: j.id,
-            title: j.title,
-            company: j.company,
-            location: j.location,
-            salary: j.salary,
-            matchPercent: j.matchPercent,
-            tags: j.tags,
-          })),
-        },
+        toolResult: { found: total, showing: jobs.length, jobs: jobs.map(summarizeJob) },
         actionType: "show_jobs",
         data: { jobs, totalJobs: total },
       };
@@ -314,19 +356,7 @@ async function executeTool(
       });
       const { jobs, total } = mapSearchResponse(raw);
       return {
-        toolResult: {
-          found: total,
-          showing: jobs.length,
-          jobs: jobs.map((j) => ({
-            id: j.id,
-            title: j.title,
-            company: j.company,
-            location: j.location,
-            salary: j.salary,
-            matchPercent: j.matchPercent,
-            tags: j.tags,
-          })),
-        },
+        toolResult: { found: total, showing: jobs.length, jobs: jobs.map(summarizeJob) },
         actionType: "show_jobs",
         data: { jobs, totalJobs: total },
       };
@@ -396,59 +426,39 @@ async function executeTool(
     case "apply_to_multiple_jobs": {
       const jobIds = (input.jobIds as string[]) || [];
       return {
-        toolResult: {
-          success: true,
-          count: jobIds.length,
-          message: `Initiated bulk application for ${jobIds.length} jobs`,
-        },
+        toolResult: { success: true, count: jobIds.length, message: `Initiated bulk application for ${jobIds.length} jobs` },
         actionType: "bulk_apply_result",
-        data: {
-          bulkResults: jobIds.map((id) => ({
-            jobId: id,
-            company: "",
-            success: true,
-          })),
-        },
+        data: { bulkResults: jobIds.map((id) => ({ jobId: id, company: "", success: true })) },
       };
     }
 
     case "email_all_hiring_managers": {
       const jobIds = (input.jobIds as string[]) || [];
       return {
-        toolResult: {
-          success: true,
-          count: jobIds.length,
-          message: `Initiated bulk email for ${jobIds.length} hiring managers`,
-        },
+        toolResult: { success: true, count: jobIds.length, message: `Initiated bulk email for ${jobIds.length} hiring managers` },
         actionType: "bulk_email_result",
-        data: {
-          bulkResults: jobIds.map((id) => ({
-            jobId: id,
-            company: "",
-            success: true,
-          })),
-        },
+        data: { bulkResults: jobIds.map((id) => ({ jobId: id, company: "", success: true })) },
       };
     }
 
     default:
-      return {
-        toolResult: { error: `Unknown tool: ${toolName}` },
-        actionType: "error",
-      };
+      return { toolResult: { error: `Unknown tool: ${toolName}` }, actionType: "error" };
   }
 }
 
-/** Extract highlights array from threeExplanations object */
+// ── Helpers ──
+
+function summarizeJob(j: { id: string; title: string; company: string; location: string; salary: string; matchPercent: number; tags: string[] }) {
+  return { id: j.id, title: j.title, company: j.company, location: j.location, salary: j.salary, matchPercent: j.matchPercent, tags: j.tags };
+}
+
 function extractHighlights(
   explanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string }
 ): string[] {
   if (!explanations) return [];
   const highlights: string[] = [];
   if (explanations.summary) highlights.push(explanations.summary);
-  if (explanations.keywords_added) {
-    highlights.push(`Keywords added: ${explanations.keywords_added.join(", ")}`);
-  }
+  if (explanations.keywords_added) highlights.push(`Keywords added: ${explanations.keywords_added.join(", ")}`);
   if (explanations.soft_skills) highlights.push(`Soft skills: ${explanations.soft_skills}`);
   return highlights;
 }
