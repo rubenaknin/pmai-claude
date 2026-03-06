@@ -12,7 +12,8 @@ import { JobDetailSheet } from "./JobDetailSheet";
 import { EmailComposer } from "./EmailComposer";
 import { ApplicationStatusCard } from "./ApplicationStatusCard";
 import { ResumePreviewCard } from "./ResumePreviewCard";
-import { Job, MOCK_JOBS as RAW_MOCK_JOBS, TOTAL_MATCHING_JOBS } from "./jobData";
+import { Job } from "./jobData";
+import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData } from "@/lib/types";
 
 const MOCK_CONVERSATIONS = [
   { id: "1", title: "Job Search — Frontend Engineer", active: true },
@@ -27,12 +28,10 @@ const INITIAL_MESSAGE: Message = {
     "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
 };
 
-type StepId = "start" | "jobs-shown" | "applied" | "email-sent" | "done";
-
 export function ChatLayout() {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
-  const [step, setStep] = useState<StepId>("start");
+  const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([
     "Here's my resume — find jobs for me",
@@ -40,11 +39,17 @@ export function ChatLayout() {
   ]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showJobPanel, setShowJobPanel] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>(RAW_MOCK_JOBS);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [totalJobs, setTotalJobs] = useState(0);
 
   // Detail sheet & email composer
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [emailJob, setEmailJob] = useState<Job | null>(null);
+  const [emailData, setEmailData] = useState<EmailData | null>(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  // Resume preview data
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
@@ -70,17 +75,45 @@ export function ChatLayout() {
   }, []);
 
   const handleApplySingle = useCallback(
-    (jobId: string) => {
+    async (jobId: string) => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job || job.status.applied) return;
+
+      // Optimistic update
       updateJob(jobId, (j) => ({
         ...j,
-        status: {
-          ...j.status,
-          applied: true,
-          appliedAt: "just now",
-        },
+        status: { ...j.status, applied: true, appliedAt: "just now" },
       }));
+
+      // Call API if we have apiData
+      if (job._apiData?.url) {
+        try {
+          const res = await fetch("/api/resume/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobUrl: job._apiData.url,
+              jobTitle: job.title,
+              company: job.company,
+              jobDetails: job._apiData.jobDetails,
+            }),
+          });
+          const data = await res.json();
+          if (data.html) {
+            setResumeData({
+              html: data.html,
+              highlights: data.highlights || [],
+              pdfUrl: data.pdfUrl,
+              jobTitle: job.title,
+              company: job.company,
+            });
+          }
+        } catch (err) {
+          console.error("Resume generation failed:", err);
+        }
+      }
     },
-    [updateJob]
+    [jobs, updateJob]
   );
 
   const handleSave = useCallback(
@@ -111,9 +144,44 @@ export function ChatLayout() {
     setDetailJob(job);
   }, []);
 
-  const handleOpenEmail = useCallback((job: Job) => {
-    setEmailJob(job);
-  }, []);
+  const handleOpenEmail = useCallback(
+    async (job: Job) => {
+      setEmailJob(job);
+      setEmailData(null);
+      setEmailLoading(true);
+
+      // Call email API if we have apiData
+      if (job._apiData?.url) {
+        try {
+          const res = await fetch("/api/email/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobUrl: job._apiData.url,
+              jobTitle: job.title,
+              company: job.company,
+              companyUrl: job._apiData.companyUrl,
+              jobDetails: job._apiData.jobDetails,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setEmailData({
+              subject: data.subject,
+              body: data.body,
+              recipientName: data.recipientName,
+              recipientTitle: data.recipientTitle,
+              company: job.company,
+            });
+          }
+        } catch (err) {
+          console.error("Email generation failed:", err);
+        }
+      }
+      setEmailLoading(false);
+    },
+    []
+  );
 
   const handleRemoveJob = useCallback(
     (jobId: string, mode: "single" | "title" | "location") => {
@@ -138,12 +206,21 @@ export function ChatLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs]);
 
-  // --- Bot messaging ---
+  // --- Build jobs context string for Claude ---
+  const buildJobsContext = useCallback(() => {
+    if (jobs.length === 0) return undefined;
+    return jobs
+      .slice(0, 20)
+      .map(
+        (j, i) =>
+          `[${i + 1}] id=${j.id} | ${j.title} at ${j.company} | ${j.location} | ${j.salary} | ${j.matchPercent}% match | applied=${j.status.applied}`
+      )
+      .join("\n");
+  }, [jobs]);
+
+  // --- Bot messaging helper ---
   const addBotMessage = useCallback(
-    async (content: string, extra?: Partial<Message>, delay = 1500) => {
-      setIsTyping(true);
-      await new Promise((r) => setTimeout(r, delay));
-      setIsTyping(false);
+    (content: string, extra?: Partial<Message>) => {
       const msg: Message = {
         id: `bot-${Date.now()}-${Math.random()}`,
         role: "bot",
@@ -151,12 +228,12 @@ export function ChatLayout() {
         ...extra,
       };
       setMessages((prev) => [...prev, msg]);
-      await new Promise((r) => setTimeout(r, 200));
       return msg;
     },
     []
   );
 
+  // --- Apply all ---
   const handleApplyAll = useCallback(async () => {
     const count = jobs.length;
     setJobs((prev) =>
@@ -166,29 +243,68 @@ export function ChatLayout() {
       }))
     );
     setSuggestions([]);
-    await addBotMessage(
+
+    addBotMessage(
       `Applying to all ${count} jobs... I'm tailoring your resume for each position to maximize your chances.`
     );
-    await addBotMessage(
+
+    // Fire bulk resume generation in background for the first job
+    const firstJob = jobs[0];
+    if (firstJob?._apiData?.url) {
+      try {
+        const res = await fetch("/api/resume/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobUrl: firstJob._apiData.url,
+            jobTitle: firstJob.title,
+            company: firstJob.company,
+            jobDetails: firstJob._apiData.jobDetails,
+          }),
+        });
+        const data = await res.json();
+        if (data.html) {
+          setResumeData({
+            html: data.html,
+            highlights: data.highlights || [],
+            pdfUrl: data.pdfUrl,
+            jobTitle: firstJob.title,
+            company: firstJob.company,
+          });
+        }
+      } catch (err) {
+        console.error("Bulk resume generation failed:", err);
+      }
+    }
+
+    addBotMessage(
       "Here's a preview of how I adapted your resume for the top match:",
-      { customComponent: <ResumePreviewCard /> },
-      1500
+      {
+        customComponent: (
+          <ResumePreviewCard
+            jobTitle={firstJob?.title}
+            company={firstJob?.company}
+            highlights={resumeData?.highlights}
+          />
+        ),
+      }
     );
-    await addBotMessage(
+    addBotMessage(
       `All done! I've submitted ${count} tailored applications.`,
-      { customComponent: <ApplicationStatusCard jobCount={count} /> },
-      1500
+      {
+        customComponent: <ApplicationStatusCard jobCount={count} />,
+      }
     );
-    await addBotMessage(
+    addBotMessage(
       "Would you like me to email the hiring managers directly? A personalized message can significantly increase your response rate."
     );
-    setStep("applied");
     setSuggestions([
       "Yes, email all hiring managers",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage, jobs.length]);
+  }, [addBotMessage, jobs, resumeData?.highlights]);
 
+  // --- Email all ---
   const handleEmailAll = useCallback(async () => {
     const count = jobs.length;
     setJobs((prev) =>
@@ -198,29 +314,29 @@ export function ChatLayout() {
       }))
     );
     setSuggestions([]);
-    await addBotMessage(
+    addBotMessage(
       `Sending personalized emails to hiring managers at all ${count} companies...`
     );
-    await addBotMessage(
+    addBotMessage(
       "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
       {
         customComponent: (
           <ApplicationStatusCard jobCount={count} emailsSent={true} />
         ),
-      },
-      2000
+      }
     );
-    await addBotMessage(
-      "I'll notify you as soon as any hiring manager responds. I'll also keep watching for new matching jobs and proactively email you when I find something great. Anything else?"
+    addBotMessage(
+      "I'll notify you as soon as any hiring manager responds. Anything else I can help with?"
     );
-    setStep("email-sent");
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
   }, [addBotMessage, jobs.length]);
 
+  // --- Main message handler (API-driven) ---
   const handleUserMessage = useCallback(
     async (content: string) => {
       if (isTyping) return;
 
+      // Add user message to UI
       const userMsg: Message = {
         id: `user-${Date.now()}`,
         role: "user",
@@ -228,50 +344,167 @@ export function ChatLayout() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setSuggestions([]);
+      setIsTyping(true);
 
-      if (step === "start") {
-        await addBotMessage(
-          "Thanks! I'm parsing your resume and matching you with relevant positions..."
-        );
-        setShowJobPanel(true);
-        await addBotMessage(
-          `Great news — I found ${TOTAL_MATCHING_JOBS} jobs that match your profile! You can browse them, apply individually, or let me apply to all of them at once.`,
-          {
-            customComponent: (
-              <JobListings
-                jobs={jobs}
-                totalJobs={TOTAL_MATCHING_JOBS}
-                onApply={handleApplySingle}
-                onApplyAll={handleApplyAll}
-                onViewDetail={handleViewDetail}
-                onSave={handleSave}
-                onEmailHM={handleOpenEmail}
-                onRemoveJob={handleRemoveJob}
-              />
-            ),
-          },
-          2000
-        );
-        setStep("jobs-shown");
-        setSuggestions([
-          "Apply for all",
-          "Tell me more about the Acme Corp role",
-        ]);
-      } else if (step === "jobs-shown") {
+      // Check for quick intent matches (button-like phrases)
+      const lower = content.toLowerCase();
+      if (
+        lower.includes("apply for all") ||
+        lower.includes("apply to all")
+      ) {
+        setIsTyping(false);
         await handleApplyAll();
-      } else if (step === "applied") {
+        return;
+      }
+      if (
+        lower.includes("email all hiring") ||
+        lower.includes("yes, email all") ||
+        lower.includes("email all")
+      ) {
+        setIsTyping(false);
         await handleEmailAll();
-      } else if (step === "email-sent" || step === "done") {
-        await addBotMessage(
-          "I'm on it! I'll keep monitoring new job postings. Whenever a new job matches your profile, I'll send you an email so you can decide if you'd like me to apply. You'll never miss an opportunity!"
+        return;
+      }
+
+      // Call the chat API
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: content,
+            history: chatHistory,
+            jobsContext: buildJobsContext(),
+          }),
+        });
+
+        const data: ChatApiResponse = await res.json();
+        setIsTyping(false);
+
+        // Update chat history
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: data.botMessage },
+        ]);
+
+        // Dispatch based on actionType
+        switch (data.actionType) {
+          case "show_jobs": {
+            if (data.data?.jobs && data.data.jobs.length > 0) {
+              setJobs(data.data.jobs);
+              setTotalJobs(data.data.totalJobs || data.data.jobs.length);
+              setShowJobPanel(true);
+
+              addBotMessage(data.botMessage, {
+                customComponent: (
+                  <JobListings
+                    jobs={data.data.jobs}
+                    totalJobs={data.data.totalJobs || data.data.jobs.length}
+                    onApply={handleApplySingle}
+                    onApplyAll={handleApplyAll}
+                    onViewDetail={handleViewDetail}
+                    onSave={handleSave}
+                    onEmailHM={handleOpenEmail}
+                    onRemoveJob={handleRemoveJob}
+                  />
+                ),
+              });
+            } else {
+              addBotMessage(data.botMessage);
+            }
+            break;
+          }
+          case "show_resume": {
+            if (data.data?.resume) {
+              setResumeData(data.data.resume);
+              addBotMessage(data.botMessage, {
+                customComponent: (
+                  <ResumePreviewCard
+                    jobTitle={data.data.resume.jobTitle}
+                    company={data.data.resume.company}
+                    highlights={data.data.resume.highlights}
+                  />
+                ),
+              });
+            } else {
+              addBotMessage(data.botMessage);
+            }
+            break;
+          }
+          case "show_email": {
+            if (data.data?.email) {
+              setEmailData(data.data.email);
+              addBotMessage(data.botMessage);
+            } else {
+              addBotMessage(data.botMessage);
+            }
+            break;
+          }
+          case "bulk_apply_result": {
+            if (data.data?.bulkResults) {
+              const count = data.data.bulkResults.length;
+              setJobs((prev) =>
+                prev.map((j) => ({
+                  ...j,
+                  status: { ...j.status, applied: true, appliedAt: "just now" },
+                }))
+              );
+              addBotMessage(data.botMessage, {
+                customComponent: <ApplicationStatusCard jobCount={count} />,
+              });
+            } else {
+              addBotMessage(data.botMessage);
+            }
+            break;
+          }
+          case "bulk_email_result": {
+            if (data.data?.bulkResults) {
+              const count = data.data.bulkResults.length;
+              setJobs((prev) =>
+                prev.map((j) => ({
+                  ...j,
+                  status: { ...j.status, emailSent: true, emailSentAt: "just now" },
+                }))
+              );
+              addBotMessage(data.botMessage, {
+                customComponent: (
+                  <ApplicationStatusCard jobCount={count} emailsSent={true} />
+                ),
+              });
+            } else {
+              addBotMessage(data.botMessage);
+            }
+            break;
+          }
+          default:
+            addBotMessage(data.botMessage);
+        }
+
+        if (data.suggestions && data.suggestions.length > 0) {
+          setSuggestions(data.suggestions);
+        }
+      } catch (err) {
+        setIsTyping(false);
+        console.error("Chat API error:", err);
+        addBotMessage(
+          "Sorry, I couldn't reach the server. Please check your connection and try again."
         );
-        setStep("done");
-        setShowJobPanel(false);
-        setSuggestions([]);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isTyping, step, addBotMessage, jobs, handleApplyAll, handleEmailAll, handleApplySingle, handleSave, handleViewDetail, handleOpenEmail, handleRemoveJob]
+    [
+      isTyping,
+      chatHistory,
+      buildJobsContext,
+      addBotMessage,
+      handleApplyAll,
+      handleEmailAll,
+      handleApplySingle,
+      handleSave,
+      handleViewDetail,
+      handleOpenEmail,
+      handleRemoveJob,
+    ]
   );
 
   // Handle initial query from homepage
@@ -357,7 +590,7 @@ export function ChatLayout() {
           <h1 className="text-sm font-medium truncate flex-1">
             Job Search — Frontend Engineer
           </h1>
-          {!showJobPanel && step !== "start" && (
+          {!showJobPanel && jobs.length > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -396,7 +629,7 @@ export function ChatLayout() {
       {showJobPanel && (
         <JobPanel
           jobs={jobs}
-          totalJobs={TOTAL_MATCHING_JOBS}
+          totalJobs={totalJobs}
           onApply={handleApplySingle}
           onApplyAll={handleApplyAll}
           onViewDetail={handleViewDetail}
@@ -421,8 +654,13 @@ export function ChatLayout() {
       <EmailComposer
         job={emailJob}
         open={!!emailJob}
-        onClose={() => setEmailJob(null)}
+        onClose={() => {
+          setEmailJob(null);
+          setEmailData(null);
+        }}
         onSend={handleEmailSingle}
+        emailData={emailData}
+        loading={emailLoading}
       />
     </div>
   );

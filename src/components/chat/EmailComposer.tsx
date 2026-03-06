@@ -13,15 +13,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Job, getHiringManager } from "./jobData";
+import type { EmailData } from "@/lib/types";
 
 interface EmailComposerProps {
   job: Job | null;
   open: boolean;
   onClose: () => void;
   onSend: (jobId: string) => void;
+  emailData?: EmailData | null;
+  loading?: boolean;
 }
 
-function generateEmail(job: Job): { subject: string; body: string } {
+function generateFallbackEmail(job: Job): { subject: string; body: string } {
   const hm = getHiringManager(job.company);
   return {
     subject: `Application for ${job.title} at ${job.company}`,
@@ -39,22 +42,55 @@ Best regards`,
   };
 }
 
-export function EmailComposer({ job, open, onClose, onSend }: EmailComposerProps) {
-  const generated = job ? generateEmail(job) : { subject: "", body: "" };
-  const [subject, setSubject] = useState(generated.subject);
-  const [body, setBody] = useState(generated.body);
+export function EmailComposer({
+  job,
+  open,
+  onClose,
+  onSend,
+  emailData,
+  loading,
+}: EmailComposerProps) {
+  // Determine email content: prefer API data, fallback to generated
+  const fallback = job ? generateFallbackEmail(job) : { subject: "", body: "" };
+  const initialSubject = emailData?.subject || fallback.subject;
+  const initialBody = emailData?.body || fallback.body;
 
-  // Reset when job changes
+  const [subject, setSubject] = useState(initialSubject);
+  const [body, setBody] = useState(initialBody);
+
+  // Reset when job changes or emailData arrives
   const [lastJobId, setLastJobId] = useState<string | null>(null);
+  const [lastEmailDataKey, setLastEmailDataKey] = useState<string | null>(null);
+
   if (job && job.id !== lastJobId) {
-    const email = generateEmail(job);
-    setSubject(email.subject);
+    const email = emailData || generateFallbackEmail(job);
+    setSubject("subject" in email ? email.subject : "");
     setBody(email.body);
     setLastJobId(job.id);
+    setLastEmailDataKey(emailData ? emailData.subject : null);
+  }
+
+  // Update when API email data arrives after initial open
+  if (
+    emailData &&
+    emailData.subject !== lastEmailDataKey &&
+    job?.id === lastJobId
+  ) {
+    setSubject(emailData.subject);
+    setBody(emailData.body);
+    setLastEmailDataKey(emailData.subject);
   }
 
   if (!job) return null;
-  const hm = getHiringManager(job.company);
+
+  const recipientName =
+    emailData?.recipientName ||
+    job.status.hiringManagerName ||
+    getHiringManager(job.company).name;
+  const recipientTitle =
+    emailData?.recipientTitle ||
+    job.status.hiringManagerTitle ||
+    getHiringManager(job.company).title;
 
   const handleSend = () => {
     onSend(job.id);
@@ -71,50 +107,59 @@ export function EmailComposer({ job, open, onClose, onSend }: EmailComposerProps
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Recipient info */}
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">To:</span>
-            <Badge variant="secondary" className="text-xs">
-              {hm.name} — {hm.title}, {job.company}
-            </Badge>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              Generating personalized email...
+            </div>
           </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Recipient info */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">To:</span>
+              <Badge variant="secondary" className="text-xs">
+                {recipientName} — {recipientTitle}, {job.company}
+              </Badge>
+            </div>
 
-          {/* Subject */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Subject
-            </label>
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="text-sm"
-            />
+            {/* Subject */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Subject
+              </label>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+
+            {/* Body */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Message
+              </label>
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={10}
+                className="text-sm leading-relaxed resize-none"
+              />
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              This email was AI-generated based on your resume and the job description. Feel free to edit before sending.
+            </p>
           </div>
-
-          {/* Body */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Message
-            </label>
-            <Textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={10}
-              className="text-sm leading-relaxed resize-none"
-            />
-          </div>
-
-          <p className="text-[11px] text-muted-foreground">
-            This email was AI-generated based on your resume and the job description. Feel free to edit before sending.
-          </p>
-        </div>
+        )}
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSend}>
+          <Button onClick={handleSend} disabled={loading}>
             Send Email
           </Button>
         </DialogFooter>

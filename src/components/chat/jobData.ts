@@ -22,9 +22,15 @@ export interface Job {
   requirements: string[];
   postedDate: string;
   status: JobStatus;
+  /** Extra API data needed for apply/email calls */
+  _apiData?: {
+    url?: string;
+    companyUrl?: string;
+    jobDetails?: string;
+  };
 }
 
-const defaultStatus = (): JobStatus => ({
+export const defaultStatus = (): JobStatus => ({
   isLive: true,
   applied: false,
   appliedAt: null,

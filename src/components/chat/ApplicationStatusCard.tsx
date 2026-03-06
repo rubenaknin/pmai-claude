@@ -6,12 +6,19 @@ import { Badge } from "@/components/ui/badge";
 interface ApplicationStatusCardProps {
   jobCount?: number;
   emailsSent?: boolean;
+  successCount?: number;
+  failCount?: number;
 }
 
 export function ApplicationStatusCard({
   jobCount = 5,
   emailsSent = false,
+  successCount,
+  failCount,
 }: ApplicationStatusCardProps) {
+  const displaySuccess = successCount ?? jobCount;
+  const displayFail = failCount ?? 0;
+
   return (
     <Card className="max-w-sm border-border/50 bg-card">
       <CardContent className="pt-4 pb-4 px-4">
@@ -21,13 +28,26 @@ export function ApplicationStatusCard({
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500" />
               <span className="text-sm">
-                {jobCount} Applications Submitted
+                {displaySuccess} Applications Submitted
               </span>
             </div>
             <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
               Done
             </Badge>
           </div>
+          {displayFail > 0 && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-red-500" />
+                <span className="text-sm text-red-600">
+                  {displayFail} Failed
+                </span>
+              </div>
+              <Badge variant="destructive" className="text-xs">
+                Error
+              </Badge>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500" />
