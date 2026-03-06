@@ -9,24 +9,52 @@ type Tool = Anthropic.Messages.Tool;
 
 export const TOOLS: Tool[] = [
   {
+    name: "get_user_profile",
+    description:
+      "Fetch the user's profile and resume status from PitchMeAI. Call this FIRST before searching for jobs if you don't know what role/title the user is looking for. Returns their dynamicTitle (desired job title), dynamicLocation (preferred location), name, and whether they have a resume uploaded.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "search_jobs",
     description:
-      "Search for jobs matching the user's criteria. Use this when the user asks to find jobs, look for positions, or describes what kind of role they want.",
+      `Search for jobs matching the user's criteria.
+
+CRITICAL RULES for the "search" parameter:
+- MUST be a specific job title or role (e.g. "frontend engineer", "data scientist", "product manager", "devops engineer")
+- NEVER use generic words like "jobs", "positions", "roles", "work", "opportunities"
+- If the user says "find me jobs" without specifying a role, you MUST first call get_user_profile to get their dynamicTitle, OR ask the user what role they want
+- If the user says "find me jobs in Tel Aviv", do NOT search for "jobs" — ask what kind of role, or use their profile's dynamicTitle
+- Good examples: "react developer", "senior backend engineer", "marketing manager", "UX designer"
+- Bad examples: "jobs", "positions in NYC", "work", "employment"`,
     input_schema: {
       type: "object" as const,
       properties: {
         search: {
           type: "string",
           description:
-            "Job search query — role title, skills, or keywords (e.g. 'frontend engineer react')",
+            "Specific job title or role to search for (e.g. 'frontend engineer', 'data scientist'). Must be a real job title, never generic words like 'jobs'.",
         },
         location: {
           type: "string",
           description:
-            "Location filter (e.g. 'New York', 'Remote', 'San Francisco'). Omit if not specified.",
+            "Location filter (e.g. 'New York', 'Remote', 'Tel Aviv'). Omit to use the user's profile location.",
         },
       },
       required: ["search"],
+    },
+  },
+  {
+    name: "get_job_recommendations",
+    description:
+      "Get personalized job recommendations based on the user's profile, resume, and preferences. Use this when the user says 'find me jobs' or 'show me matching jobs' WITHOUT specifying a particular role — this uses their profile's dynamicTitle and dynamicLocation automatically.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
     },
   },
   {
@@ -121,28 +149,13 @@ export const TOOLS: Tool[] = [
       required: ["jobIds"],
     },
   },
-  {
-    name: "build_new_resume",
-    description:
-      "Start building a new resume from scratch or update an existing one. Use when the user wants to create, build, or upload a resume.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        template: {
-          type: "string",
-          description:
-            "Resume template to use (optional). Leave empty for default.",
-        },
-      },
-      required: [],
-    },
-  },
 ];
 
 export type ToolName =
+  | "get_user_profile"
   | "search_jobs"
+  | "get_job_recommendations"
   | "generate_tailored_resume"
   | "generate_intro_email"
   | "apply_to_multiple_jobs"
-  | "email_all_hiring_managers"
-  | "build_new_resume";
+  | "email_all_hiring_managers";

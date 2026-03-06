@@ -9,6 +9,17 @@ export interface ChatRequest {
   message: string;
   history: ChatHistoryMessage[];
   jobsContext?: string; // serialized summary of current jobs for Claude context
+  userIp?: string; // for geolocation fallback
+}
+
+export interface UserProfile {
+  dynamicTitle?: string;
+  dynamicLocation?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  hasResume?: boolean;
+  [key: string]: unknown;
 }
 
 export type ActionType =

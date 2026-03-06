@@ -128,19 +128,26 @@ export async function generateEmail(params: {
   });
 }
 
-/** Resume builder — start building a new resume */
-export async function startResumeBuild(params: {
-  template?: string;
-}): Promise<{ buildId?: string; id?: string; [key: string]: unknown }> {
-  return apiFetch("/resume-builder/start", {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
+/** Get the user's resume data */
+export async function getUserResume(
+  userID: string
+): Promise<Record<string, unknown>> {
+  return apiFetch(`/resume-builder/resume/${userID}`);
+}
+
+/** Get user settings / profile (returns dynamicTitle, dynamicLocation, etc.) */
+export async function getUserSettings(): Promise<Record<string, unknown>> {
+  return apiFetch("/settings");
+}
+
+/** Get personalized job recommendations based on user profile */
+export async function getJobRecommendations(): Promise<PitchMeSearchResponse> {
+  return apiFetch<PitchMeSearchResponse>("/jobs/recommendations");
 }
 
 /** Resume builder — check build status / get result */
 export async function getResumeBuildStatus(
-  buildId: string
+  userID: string
 ): Promise<{ status?: string; html?: string; pdfUrl?: string; [key: string]: unknown }> {
-  return apiFetch(`/resume-builder/status/${buildId}`);
+  return apiFetch(`/resume-builder/status/${userID}`);
 }

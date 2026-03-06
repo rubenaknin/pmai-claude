@@ -14,7 +14,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await processChat(message, history, jobsContext);
+    // Extract user IP for geolocation fallback
+    const userIp =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      undefined;
+
+    const result = await processChat(message, history, jobsContext, userIp);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
