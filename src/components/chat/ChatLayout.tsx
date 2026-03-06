@@ -86,26 +86,29 @@ export function ChatLayout() {
       }));
 
       // Call API if we have apiData
-      if (job._apiData?.url) {
+      if (job._apiData?.url && job._apiData?.jobId) {
         try {
           const res = await fetch("/api/resume/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              jobUrl: job._apiData.url,
-              jobTitle: job.title,
-              company: job.company,
-              jobDetails: job._apiData.jobDetails,
+              url: job._apiData.url,
+              jobId: job._apiData.jobId,
+              jobName: job._apiData.jobName || job.title,
+              companyName: job._apiData.companyName || job.company,
+              jobDetails: job._apiData.jobDetails || job.description,
+              location: job._apiData.location || job.location,
             }),
           });
           const data = await res.json();
           if (data.html) {
             setResumeData({
               html: data.html,
-              highlights: data.highlights || [],
-              pdfUrl: data.pdfUrl,
+              highlights: [],
+              pdfFileName: data.pdfFileName,
               jobTitle: job.title,
               company: job.company,
+              threeExplanations: data.threeExplanations,
             });
           }
         } catch (err) {
@@ -151,17 +154,18 @@ export function ChatLayout() {
       setEmailLoading(true);
 
       // Call email API if we have apiData
-      if (job._apiData?.url) {
+      if (job._apiData?.jobId) {
         try {
           const res = await fetch("/api/email/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              jobUrl: job._apiData.url,
-              jobTitle: job.title,
-              company: job.company,
+              jobId: job._apiData.jobId,
+              jobName: job._apiData.jobName || job.title,
+              companyName: job._apiData.companyName || job.company,
+              jobDetails: job._apiData.jobDetails || job.description,
+              url: job._apiData.url,
               companyUrl: job._apiData.companyUrl,
-              jobDetails: job._apiData.jobDetails,
             }),
           });
           const data = await res.json();
@@ -251,26 +255,29 @@ export function ChatLayout() {
 
     // Fire bulk resume generation in background for the first job
     const firstJob = jobs[0];
-    if (firstJob?._apiData?.url) {
+    if (firstJob?._apiData?.url && firstJob?._apiData?.jobId) {
       try {
         const res = await fetch("/api/resume/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            jobUrl: firstJob._apiData.url,
-            jobTitle: firstJob.title,
-            company: firstJob.company,
-            jobDetails: firstJob._apiData.jobDetails,
+            url: firstJob._apiData.url,
+            jobId: firstJob._apiData.jobId,
+            jobName: firstJob._apiData.jobName || firstJob.title,
+            companyName: firstJob._apiData.companyName || firstJob.company,
+            jobDetails: firstJob._apiData.jobDetails || firstJob.description,
+            location: firstJob._apiData.location || firstJob.location,
           }),
         });
         const data = await res.json();
         if (data.html) {
           setResumeData({
             html: data.html,
-            highlights: data.highlights || [],
-            pdfUrl: data.pdfUrl,
+            highlights: [],
+            pdfFileName: data.pdfFileName,
             jobTitle: firstJob.title,
             company: firstJob.company,
+            threeExplanations: data.threeExplanations,
           });
         }
       } catch (err) {

@@ -69,8 +69,14 @@ export interface ResumeData {
   html: string;
   highlights: string[];
   pdfUrl?: string;
+  pdfFileName?: string;
   jobTitle?: string;
   company?: string;
+  threeExplanations?: {
+    summary?: string;
+    keywords_added?: string[];
+    soft_skills?: string;
+  };
 }
 
 export interface EmailData {
@@ -78,6 +84,8 @@ export interface EmailData {
   body: string;
   recipientName: string;
   recipientTitle: string;
+  recipientEmail?: string;
+  recipientLinkedin?: string;
   company: string;
 }
 
@@ -94,33 +102,66 @@ export interface BulkResult {
   message?: string;
 }
 
-/** Raw API response shape from PitchMeAI search */
+/** Raw job document from CouchDB (returned by GET /jobs) */
 export interface PitchMeApiJob {
-  url?: string;
+  _id?: string;
   title?: string;
+  organization?: string;
   company?: string;
-  companyUrl?: string;
+  company_name?: string;
+  url?: string;
+  redirect_url?: string;
   location?: string;
+  locations_derived?: string[];
+  remote_derived?: boolean;
+  salary_raw?: {
+    value?: {
+      minValue?: number;
+      maxValue?: number;
+    };
+  };
   salary?: string;
+  date_posted?: string;
+  description_text?: string;
+  description?: string;
+  gpt_content_taxonomy?: {
+    industry?: string;
+    [key: string]: unknown;
+  };
+  company_size?: number;
+  linkedin_org_size?: number;
+  employment_type?: string;
+  thumbnail?: string;
+  company_url?: string;
+  companyUrl?: string;
+  company_profile_url?: string;
+  companyProfileUrl?: string;
   matchScore?: number;
   skills?: string[];
   tags?: string[];
-  description?: string;
-  jobDetails?: string;
-  requirements?: string[];
-  posted?: string;
-  postedDate?: string;
-  isActive?: boolean;
-  hiringManager?: {
-    name?: string;
-    title?: string;
-  };
   [key: string]: unknown;
 }
 
+/** Response shape from GET /jobs or GET /jobs/recommendations */
 export interface PitchMeSearchResponse {
-  jobs?: PitchMeApiJob[];
   results?: PitchMeApiJob[];
+  pagination?: {
+    currentPage?: number;
+    jobsPerPage?: number;
+    totalJobs?: number;
+    totalPages?: number;
+    hasNextPage?: boolean;
+  };
+  metadata?: {
+    searchQuery?: string;
+    geolocation?: Record<string, unknown>;
+    taxonomyTokens?: string[];
+    radiusMiles?: number;
+    bookmark?: string;
+    [key: string]: unknown;
+  };
+  // Legacy fallback shapes
+  jobs?: PitchMeApiJob[];
   data?: PitchMeApiJob[];
   total?: number;
   totalResults?: number;
@@ -128,18 +169,49 @@ export interface PitchMeSearchResponse {
   [key: string]: unknown;
 }
 
+/** Response from POST /resume/generate */
 export interface PitchMeResumeResponse {
+  jobId?: string;
+  newResumeHTMLBody?: string;
+  threeExplanations?: {
+    summary?: string;
+    keywords_added?: string[];
+    soft_skills?: string;
+  };
+  pdfFileName?: string;
+  resumeHistory?: unknown[];
+  createdAtResume?: string;
+  jobName?: string;
+  companyName?: string;
+  files?: {
+    pdf?: string;
+  };
+  // Legacy fallbacks
   html?: string;
   resume_html?: string;
   resumeHtml?: string;
   highlights?: string[];
   pdfUrl?: string;
   pdf_url?: string;
-  success?: boolean;
   [key: string]: unknown;
 }
 
+/** Response from POST /letter/generate */
 export interface PitchMeEmailResponse {
+  jobId?: string;
+  introEmail?: string;
+  originalIntroEmail?: string;
+  recruiter?: {
+    name?: string;
+    first_name?: string;
+    email?: string;
+    title?: string;
+    linkedin_url?: string;
+    photo_url?: string;
+  };
+  introEmailHistory?: unknown[];
+  createdAtIntroEmail?: string;
+  // Legacy fallbacks
   subject?: string;
   body?: string;
   email_body?: string;
@@ -147,6 +219,5 @@ export interface PitchMeEmailResponse {
   recipient?: string;
   recipientName?: string;
   recipientTitle?: string;
-  success?: boolean;
   [key: string]: unknown;
 }

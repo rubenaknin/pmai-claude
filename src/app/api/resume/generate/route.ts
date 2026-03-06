@@ -4,26 +4,50 @@ import { generateResume } from "@/lib/pitchmeai-client";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { jobUrl, jobTitle, company, jobDetails } = body;
+    const { url, jobId, jobDetails, jobName, companyName, companyUrl, location } = body;
 
-    if (!jobUrl) {
+    if (!url || !jobId || !jobDetails || !jobName || !companyName) {
       return NextResponse.json(
-        { error: "jobUrl is required" },
+        { error: "url, jobId, jobDetails, jobName, and companyName are required" },
         { status: 400 }
       );
     }
 
-    const result = await generateResume({ jobUrl, jobTitle, company, jobDetails });
+    const result = await generateResume({
+      url,
+      jobId,
+      jobDetails,
+      jobName,
+      companyName,
+      companyUrl,
+      location,
+      platform: "PitchMeAI",
+    });
 
     return NextResponse.json({
       success: true,
-      html: result.html || result.resume_html || result.resumeHtml || "",
-      highlights: result.highlights || [],
-      pdfUrl: result.pdfUrl || result.pdf_url || null,
+      html: result.newResumeHTMLBody || "",
+      threeExplanations: result.threeExplanations,
+      pdfFileName: result.pdfFileName,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("POST /api/resume/generate error:", message);
+
+    // Handle specific error codes
+    if (message.includes("402")) {
+      return NextResponse.json(
+        { error: "Insufficient credits", success: false },
+        { status: 402 }
+      );
+    }
+    if (message.includes("420")) {
+      return NextResponse.json(
+        { error: "Resume generation already in progress", success: false },
+        { status: 420 }
+      );
+    }
+
     return NextResponse.json({ error: message, success: false }, { status: 500 });
   }
 }

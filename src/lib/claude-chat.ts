@@ -1,7 +1,7 @@
 /**
  * Core chat orchestration:
  * User message + history → Claude with tools → execute tool calls → tool_result → final response
- * Supports multi-turn tool use (e.g. get_user_profile → search_jobs in one turn).
+ * Supports multi-turn tool use (e.g. search_jobs → generate_resume in one turn).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -10,7 +10,6 @@ import {
   searchJobs,
   generateResume,
   generateEmail,
-  getUserSettings,
   getJobRecommendations,
   getNetworkLogs,
   resetNetworkLogs,
@@ -21,14 +20,13 @@ import type {
   ChatApiResponse,
   ActionType,
   DebugInfo,
-  UserProfile,
 } from "./types";
 
 const anthropic = new Anthropic();
 
 const MODEL = "claude-sonnet-4-5-20250929";
 
-function buildSystemPrompt(userProfile?: UserProfile | null, userIp?: string): string {
+function buildSystemPrompt(userIp?: string): string {
   let prompt = `You are Nikki, PitchMeAI's friendly and efficient job application assistant.
 
 Your capabilities:
@@ -37,25 +35,25 @@ Your capabilities:
 - Write personalized intro emails to hiring managers
 - Apply to multiple jobs at once (bulk apply)
 - Email all hiring managers for a set of jobs
-- Check user's profile and resume status
 
-CRITICAL SEARCH RULES:
-- The search_jobs tool requires a SPECIFIC job title/role (e.g. "frontend engineer", "data analyst")
-- NEVER search for generic words like "jobs", "positions", "roles", "work"
-- If the user asks "find me jobs" without specifying a role:
-  1. FIRST call get_user_profile to check if they have a dynamicTitle set
-  2. If they have a dynamicTitle, use get_job_recommendations (it uses their profile automatically) OR search_jobs with their dynamicTitle
-  3. If they DON'T have a dynamicTitle or resume, ask them: "What kind of role are you looking for?" and suggest they upload their resume
-- If the user mentions a location but not a role, still get their profile first to find their dynamicTitle
+HOW JOB SEARCH WORKS:
+- The backend automatically uses the user's uploaded resume/profile to determine their job title taxonomy and location
+- When calling search_jobs, the user's profile taxonomy tokens are ALWAYS added to the search automatically
+- This means if a user says "find me jobs in Tel Aviv" you can call search_jobs with just location="Tel Aviv" and the backend will search using their profile's job title
+- If the user specifies a role like "frontend engineer jobs in NYC", pass search="frontend engineer" and location="NYC"
+- If the user gives a vague request like "find me jobs" with no role or location, use get_job_recommendations which uses their full profile
 
-RESUME/PROFILE FLOW:
-- If the user has no resume uploaded (hasResume=false), suggest they upload one for better matching
-- If the user mentions "here's my resume" or wants to upload, tell them to use the upload feature (we don't handle file uploads in chat yet)
+SEARCH RULES:
+- NEVER search for generic words like "jobs", "positions", "roles", "work" — these are NOT job titles
+- If the user specifies a role, use search_jobs with that role
+- If the user only specifies a location, use search_jobs with just location (backend adds profile title)
+- If the user gives no specifics, use get_job_recommendations
 
-LOCATION HANDLING:
-- If the user specifies a location, pass it to search_jobs
-- If no location is specified, the API will use the user's profile location automatically
-- Do NOT guess or assume locations
+RESUME & EMAIL GENERATION:
+- To generate a resume or email, you MUST have the job's ID, URL, title, company, and description
+- These come from the _apiData field of jobs returned by search results
+- When the user says "apply for job #3", look up that job from the search results context
+- The resume/email generation costs the user 1 credit — mention this if relevant
 
 Guidelines:
 - Be conversational, helpful, and concise
@@ -65,50 +63,11 @@ Guidelines:
 - Never make up job listings — only show real results from the search tool
 - When no tool is needed (general questions, chitchat), just respond naturally`;
 
-  if (userProfile) {
-    prompt += `\n\nUser Profile:`;
-    if (userProfile.firstName || userProfile.lastName) {
-      prompt += `\n- Name: ${[userProfile.firstName, userProfile.lastName].filter(Boolean).join(" ")}`;
-    }
-    if (userProfile.dynamicTitle) {
-      prompt += `\n- Looking for: ${userProfile.dynamicTitle}`;
-    }
-    if (userProfile.dynamicLocation) {
-      prompt += `\n- Preferred location: ${userProfile.dynamicLocation}`;
-    }
-    if (userProfile.hasResume !== undefined) {
-      prompt += `\n- Resume uploaded: ${userProfile.hasResume ? "yes" : "no"}`;
-    }
-  }
-
   if (userIp) {
     prompt += `\n\nUser's IP address (for approximate geolocation if no location specified): ${userIp}`;
   }
 
   return prompt;
-}
-
-// Cache the user profile for the request lifecycle
-let cachedProfile: UserProfile | null = null;
-let profileFetched = false;
-
-async function fetchUserProfile(): Promise<UserProfile | null> {
-  if (profileFetched) return cachedProfile;
-  try {
-    const settings = await getUserSettings();
-    cachedProfile = {
-      dynamicTitle: settings.dynamicTitle as string | undefined,
-      dynamicLocation: settings.dynamicLocation as string | undefined,
-      firstName: settings.firstName as string | undefined,
-      lastName: settings.lastName as string | undefined,
-      email: settings.email as string | undefined,
-      hasResume: !!settings.dynamicTitle, // proxy: if they have a title, they likely uploaded a resume
-    };
-  } catch {
-    cachedProfile = null;
-  }
-  profileFetched = true;
-  return cachedProfile;
 }
 
 export async function processChat(
@@ -119,8 +78,6 @@ export async function processChat(
 ): Promise<ChatApiResponse> {
   // Reset per-request state
   resetNetworkLogs();
-  profileFetched = false;
-  cachedProfile = null;
 
   const debug: DebugInfo = {
     networkLogs: [],
@@ -128,16 +85,13 @@ export async function processChat(
     timestamp: new Date().toISOString(),
   };
 
-  // Pre-fetch user profile so we can include it in the system prompt
-  const userProfile = await fetchUserProfile();
-
   // Build messages array for Claude
   const messages: Anthropic.Messages.MessageParam[] = history.map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  let systemPrompt = buildSystemPrompt(userProfile, userIp);
+  let systemPrompt = buildSystemPrompt(userIp);
   if (jobsContext) {
     systemPrompt += `\n\nCurrent jobs the user is looking at:\n${jobsContext}`;
   }
@@ -187,11 +141,11 @@ export async function processChat(
       const toolName = toolUseBlock.name as ToolName;
       const toolInput = toolUseBlock.input as Record<string, unknown>;
 
-      // Track the last meaningful tool for debug
-      if (toolName !== "get_user_profile") {
+      // Track tool for debug
+      if (!debug.toolUsed) {
         debug.toolUsed = toolName;
         debug.toolInput = toolInput;
-      } else if (!debug.toolUsed) {
+      } else {
         debug.toolUsed = toolName;
         debug.toolInput = toolInput;
       }
@@ -251,22 +205,6 @@ async function executeTool(
   data?: ChatApiResponse["data"];
 }> {
   switch (toolName) {
-    case "get_user_profile": {
-      const profile = await fetchUserProfile();
-      return {
-        toolResult: profile
-          ? {
-              dynamicTitle: profile.dynamicTitle || null,
-              dynamicLocation: profile.dynamicLocation || null,
-              firstName: profile.firstName || null,
-              lastName: profile.lastName || null,
-              hasResume: profile.hasResume || false,
-            }
-          : { error: "Could not fetch user profile", hasResume: false },
-        actionType: "general",
-      };
-    }
-
     case "get_job_recommendations": {
       const raw = await getJobRecommendations();
       const { jobs, total } = mapSearchResponse(raw);
@@ -291,7 +229,7 @@ async function executeTool(
 
     case "search_jobs": {
       const raw = await searchJobs({
-        search: input.search as string,
+        search: input.search as string | undefined,
         location: input.location as string | undefined,
       });
       const { jobs, total } = mapSearchResponse(raw);
@@ -316,23 +254,27 @@ async function executeTool(
 
     case "generate_tailored_resume": {
       const result = await generateResume({
-        jobUrl: input.jobUrl as string,
-        jobTitle: input.jobTitle as string | undefined,
-        company: input.company as string | undefined,
-        jobDetails: input.jobDetails as string | undefined,
+        url: input.url as string,
+        jobId: input.jobId as string,
+        jobName: input.jobName as string,
+        companyName: input.companyName as string,
+        jobDetails: input.jobDetails as string,
+        platform: "PitchMeAI",
       });
       const resumeData = {
-        html: result.html || result.resume_html || result.resumeHtml || "",
-        highlights: result.highlights || [],
-        pdfUrl: result.pdfUrl || result.pdf_url,
-        jobTitle: input.jobTitle as string | undefined,
-        company: input.company as string | undefined,
+        html: result.newResumeHTMLBody || result.html || result.resume_html || "",
+        highlights: extractHighlights(result.threeExplanations),
+        pdfFileName: result.pdfFileName,
+        jobTitle: input.jobName as string | undefined,
+        company: input.companyName as string | undefined,
+        threeExplanations: result.threeExplanations,
       };
       return {
         toolResult: {
           success: true,
           hasResume: !!resumeData.html,
           highlights: resumeData.highlights,
+          summary: result.threeExplanations?.summary,
         },
         actionType: "show_resume",
         data: { resume: resumeData },
@@ -341,24 +283,30 @@ async function executeTool(
 
     case "generate_intro_email": {
       const result = await generateEmail({
-        jobUrl: input.jobUrl as string,
-        jobTitle: input.jobTitle as string | undefined,
-        company: input.company as string | undefined,
+        jobId: input.jobId as string,
+        jobName: input.jobName as string,
+        companyName: input.companyName as string,
+        jobDetails: input.jobDetails as string,
+        url: input.url as string | undefined,
         companyUrl: input.companyUrl as string | undefined,
-        jobDetails: input.jobDetails as string | undefined,
+        platform: "PitchMeAI",
       });
       const emailData = {
-        subject: result.subject || `Introduction — ${input.jobTitle || "Job Application"}`,
-        body: result.body || result.email_body || result.emailBody || "",
-        recipientName: result.recipientName || result.recipient || "Hiring Manager",
-        recipientTitle: result.recipientTitle || "",
-        company: (input.company as string) || "",
+        subject: `Introduction — ${input.jobName || "Job Application"}`,
+        body: result.introEmail || result.body || result.email_body || "",
+        recipientName: result.recruiter?.name || result.recipientName || "Hiring Manager",
+        recipientTitle: result.recruiter?.title || result.recipientTitle || "",
+        recipientEmail: result.recruiter?.email,
+        recipientLinkedin: result.recruiter?.linkedin_url,
+        company: (input.companyName as string) || "",
       };
       return {
         toolResult: {
           success: true,
           subject: emailData.subject,
           recipientName: emailData.recipientName,
+          recipientTitle: emailData.recipientTitle,
+          hasRecruiterEmail: !!emailData.recipientEmail,
         },
         actionType: "show_email",
         data: { email: emailData },
@@ -409,6 +357,20 @@ async function executeTool(
         actionType: "error",
       };
   }
+}
+
+/** Extract highlights array from threeExplanations object */
+function extractHighlights(
+  explanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string }
+): string[] {
+  if (!explanations) return [];
+  const highlights: string[] = [];
+  if (explanations.summary) highlights.push(explanations.summary);
+  if (explanations.keywords_added) {
+    highlights.push(`Keywords added: ${explanations.keywords_added.join(", ")}`);
+  }
+  if (explanations.soft_skills) highlights.push(`Soft skills: ${explanations.soft_skills}`);
+  return highlights;
 }
 
 function buildSuggestions(actionType: ActionType): string[] {

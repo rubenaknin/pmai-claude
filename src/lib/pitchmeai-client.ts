@@ -98,15 +98,24 @@ export async function searchJobs(params: {
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
 
-  return apiFetch<PitchMeSearchResponse>(`/jobs?${qs.toString()}`);
+  const queryString = qs.toString();
+  return apiFetch<PitchMeSearchResponse>(`/jobs${queryString ? `?${queryString}` : ""}`);
 }
 
-/** Generate a tailored resume for a specific job */
+/**
+ * Generate a tailored resume for a specific job.
+ * Backend requires: url, jobId, jobDetails, jobName, companyName
+ */
 export async function generateResume(params: {
-  jobUrl: string;
-  jobTitle?: string;
-  company?: string;
-  jobDetails?: string;
+  url: string;
+  jobId: string;
+  jobDetails: string;
+  jobName: string;
+  companyName: string;
+  companyUrl?: string;
+  companyProfileUrl?: string;
+  location?: string;
+  platform?: string;
 }): Promise<PitchMeResumeResponse> {
   return apiFetch<PitchMeResumeResponse>("/resume/generate", {
     method: "POST",
@@ -114,13 +123,19 @@ export async function generateResume(params: {
   });
 }
 
-/** Generate an intro email to a hiring manager */
+/**
+ * Generate an intro email to a hiring manager.
+ * Backend requires: jobId, jobDetails, jobName, companyName
+ */
 export async function generateEmail(params: {
-  jobUrl: string;
-  jobTitle?: string;
-  company?: string;
+  jobId: string;
+  jobDetails: string;
+  jobName: string;
+  companyName: string;
+  url?: string;
   companyUrl?: string;
-  jobDetails?: string;
+  companyProfileUrl?: string;
+  platform?: string;
 }): Promise<PitchMeEmailResponse> {
   return apiFetch<PitchMeEmailResponse>("/letter/generate", {
     method: "POST",
@@ -133,11 +148,6 @@ export async function getUserResume(
   userID: string
 ): Promise<Record<string, unknown>> {
   return apiFetch(`/resume-builder/resume/${userID}`);
-}
-
-/** Get user profile data (returns dynamicTitle, dynamicLocation, etc.) */
-export async function getUserSettings(): Promise<Record<string, unknown>> {
-  return apiFetch("/tracking/auth");
 }
 
 /** Get personalized job recommendations based on user profile */

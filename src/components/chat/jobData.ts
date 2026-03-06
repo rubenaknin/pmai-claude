@@ -24,9 +24,15 @@ export interface Job {
   status: JobStatus;
   /** Extra API data needed for apply/email calls */
   _apiData?: {
+    jobId?: string;
     url?: string;
     companyUrl?: string;
+    companyProfileUrl?: string;
     jobDetails?: string;
+    jobName?: string;
+    companyName?: string;
+    location?: string;
+    thumbnail?: string;
   };
 }
 
