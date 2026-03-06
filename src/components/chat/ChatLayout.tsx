@@ -471,8 +471,9 @@ export function ChatLayout() {
               setShowJobPanel(true);
 
               if (incomingJobs.length <= 5) {
-                // Inline rich job cards in chat
-                addBotMessage(data.botMessage, {
+                // Inline rich job cards in chat — short message
+                const shortMsg = `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`;
+                addBotMessage(shortMsg, {
                   customComponent: (
                     <ChatJobCards
                       jobs={incomingJobs}
@@ -484,8 +485,9 @@ export function ChatLayout() {
                   ),
                 }, debugInfo);
               } else {
-                // Text-only message, jobs visible in right panel
-                addBotMessage(data.botMessage, undefined, debugInfo);
+                // >5 jobs: short text only, jobs visible in right panel
+                const shortMsg = `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`;
+                addBotMessage(shortMsg, undefined, debugInfo);
               }
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
