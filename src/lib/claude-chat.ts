@@ -64,9 +64,12 @@ HOW JOB SEARCH WORKS:
 
 SEARCH RULES:
 - NEVER search for generic words like "jobs", "positions", "roles", "work" — these are NOT job titles
-- If the user specifies a role, use search_jobs with that role
-- If the user only specifies a location, use search_jobs with just location (backend adds profile title)
-- If the user gives no specifics, use get_job_recommendations
+- You MUST have BOTH a job title/role AND a location before calling search_jobs. If either is missing, ask the user for the missing piece instead of searching.
+- If the user provides a role but no location, ask "Where are you looking?" before searching
+- If the user provides a location but no role: check if we have a job title from their profile (see USER PROFILE below). If yes, use that title. If no profile title, ask the user what kind of role they want.
+- If the user gives no specifics at all, ask what they're looking for and where
+- NEVER call search_jobs with only a location and no title (unless the profile provides the title)
+- NEVER call search_jobs with only a title and no location — ask where they want to work
 
 RESUME & EMAIL GENERATION:
 - To generate a resume or email, you MUST have the job's ID, URL, title, company, and description
@@ -221,22 +224,26 @@ async function handleFirstMessage(
 
   const role = extractRole(userMessage);
   const location = extractLocation(userMessage);
+  const profileLocation = userStatus?.dynamicLocation;
   const greeting = name ? `Sure, ${name}!` : "Sure!";
 
-  // ── Case 1: User explicitly specified a role → search immediately ──
-  if (role) {
-    const raw = await searchJobs({ search: role, location: location || undefined });
+  // Resolve the effective title and location (user-specified takes priority, then profile)
+  const effectiveTitle = role || profileTitle;
+  const effectiveLocation = location || profileLocation;
+
+  // ── Both title and location available → search immediately ──
+  if (effectiveTitle && effectiveLocation) {
+    const raw = await searchJobs({ search: role || undefined, location: effectiveLocation });
     const { jobs, total } = mapSearchResponse(raw);
 
     if (debug) {
       debug.toolUsed = "search_jobs";
-      debug.toolInput = { search: role, location };
+      debug.toolInput = { search: role || profileTitle, location: effectiveLocation };
       debug.networkLogs = getNetworkLogs();
     }
 
-    const locationLabel = location ? ` in ${location}` : "";
     return {
-      botMessage: `${greeting} I found ${total} ${role} job${total !== 1 ? "s" : ""}${locationLabel} for you.`,
+      botMessage: `${greeting} I found ${total} ${effectiveTitle} job${total !== 1 ? "s" : ""} in ${effectiveLocation} for you.`,
       actionType: "show_jobs",
       data: { jobs, totalJobs: total },
       suggestions: buildSuggestions("show_jobs"),
@@ -244,41 +251,35 @@ async function handleFirstMessage(
     };
   }
 
-  // ── Case 2: No explicit role — user has a profile title → confirm ──
-  if (isLoggedIn && hasResume && profileTitle) {
-    if (location) {
-      return {
-        botMessage: `${greeting} Should I look for ${profileTitle} roles in ${location}?`,
-        actionType: "general",
-        suggestions: [`Yes, find ${profileTitle} jobs in ${location}`, "No, a different role"],
-        _debug: debug,
-      };
-    }
-    return {
-      botMessage: `${greeting} Should I look for ${profileTitle} roles?`,
-      actionType: "general",
-      suggestions: [`Yes, find ${profileTitle} jobs`, "No, a different role"],
-      _debug: debug,
-    };
-  }
-
-  // ── Case 3: No role, no profile title → ask for details ──
+  // ── Missing title or location → ask for what's missing ──
   const resumeHint = hasResume
     ? ""
     : " You can also upload your resume so I can get to know you better.";
   const resumeSuggestion = hasResume ? [] : ["Upload my resume"];
 
-  if (location) {
+  if (effectiveTitle && !effectiveLocation) {
+    // Have title, need location
     return {
-      botMessage: `${greeting} Any specific type of jobs I should look for in ${location}?${resumeHint}`,
+      botMessage: `${greeting} Where are you looking for ${effectiveTitle} roles?`,
+      actionType: "general",
+      suggestions: ["Remote", "New York", "San Francisco"],
+      _debug: debug,
+    };
+  }
+
+  if (!effectiveTitle && effectiveLocation) {
+    // Have location, need title
+    return {
+      botMessage: `${greeting} What kind of roles are you looking for in ${effectiveLocation}?${resumeHint}`,
       actionType: "general",
       suggestions: resumeSuggestion,
       _debug: debug,
     };
   }
 
+  // Neither title nor location
   return {
-    botMessage: `${greeting} What kind of roles are you looking for?${resumeHint}`,
+    botMessage: `${greeting} What kind of roles are you looking for, and where?${resumeHint}`,
     actionType: "general",
     suggestions: resumeSuggestion,
     _debug: debug,
