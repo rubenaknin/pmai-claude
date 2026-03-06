@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { ChatMessage, Message } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { JobPanel } from "./JobPanel";
-import { JobListings } from "./JobListings";
+import { ChatJobCards } from "./ChatJobCards";
 import { JobDetailSheet } from "./JobDetailSheet";
 import { EmailComposer } from "./EmailComposer";
 import { ApplicationStatusCard } from "./ApplicationStatusCard";
 import { ResumePreviewCard } from "./ResumePreviewCard";
 import { Job } from "./jobData";
-import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData, DebugInfo } from "@/lib/types";
+import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData, DebugInfo, UserStatusResponse } from "@/lib/types";
 
 const MOCK_CONVERSATIONS = [
   { id: "1", title: "Job Search — Frontend Engineer", active: true },
@@ -21,26 +21,20 @@ const MOCK_CONVERSATIONS = [
   { id: "3", title: "Interview Prep — DataDrive", active: false },
 ];
 
-const INITIAL_MESSAGE: Message = {
-  id: "1",
-  role: "bot",
-  content:
-    "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
-};
-
 export function ChatLayout() {
   const searchParams = useSearchParams();
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([
-    "Here's my resume — find jobs for me",
-    "I'm looking for frontend engineer roles",
-  ]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
+
+  // Initialization state
+  const [initLoading, setInitLoading] = useState(true);
+  const initDone = useRef(false);
 
   // Detail sheet & email composer
   const [detailJob, setDetailJob] = useState<Job | null>(null);
@@ -68,6 +62,75 @@ export function ChatLayout() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
+
+  // --- Smart initialization ---
+  useEffect(() => {
+    if (initDone.current) return;
+    initDone.current = true;
+
+    setIsTyping(true);
+
+    fetch("/api/user/status")
+      .then((res) => res.json())
+      .then((data: UserStatusResponse) => {
+        let greeting: string;
+        let initSuggestions: string[];
+
+        if (data.isLoggedIn && data.hasResume && data.dynamicTitle) {
+          const name = data.userFirstName || "there";
+          const title = data.dynamicTitle;
+          const location = data.dynamicLocation;
+          greeting = location
+            ? `Hi ${name}! I see you're looking for ${title} roles in ${location}. Want me to search for matching jobs?`
+            : `Hi ${name}! I see you're looking for ${title} roles. Want me to search for matching jobs?`;
+          initSuggestions = [
+            `Yes, find ${title} jobs${location ? ` in ${location}` : ""}`,
+            "Something else",
+          ];
+        } else if (data.isLoggedIn) {
+          const name = data.userFirstName || "there";
+          greeting = `Hi ${name}! Upload your resume or tell me what role you're looking for, and I'll find matching jobs for you.`;
+          initSuggestions = [
+            "Here's my resume — find jobs for me",
+            "I'm looking for frontend engineer roles",
+            "I'm looking for product manager roles",
+          ];
+        } else {
+          greeting =
+            "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.";
+          initSuggestions = [
+            "Here's my resume — find jobs for me",
+            "I'm looking for frontend engineer roles",
+          ];
+        }
+
+        const botMsg: Message = {
+          id: "init-greeting",
+          role: "bot",
+          content: greeting,
+        };
+        setMessages([botMsg]);
+        setSuggestions(initSuggestions);
+      })
+      .catch(() => {
+        // Fallback to generic greeting
+        const botMsg: Message = {
+          id: "init-greeting",
+          role: "bot",
+          content:
+            "Hi! I'm Nikki, your PitchMeAI assistant. Upload your resume and I'll find matching jobs, tailor your resume for each one, and apply for you. You can also paste a job link or tell me what you're looking for.",
+        };
+        setMessages([botMsg]);
+        setSuggestions([
+          "Here's my resume — find jobs for me",
+          "I'm looking for frontend engineer roles",
+        ]);
+      })
+      .finally(() => {
+        setIsTyping(false);
+        setInitLoading(false);
+      });
+  }, []);
 
   // --- Job state helpers ---
   const updateJob = useCallback((jobId: string, updater: (j: Job) => Job) => {
@@ -401,24 +464,29 @@ export function ChatLayout() {
         switch (data.actionType) {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
-              setJobs(data.data.jobs);
-              setTotalJobs(data.data.totalJobs || data.data.jobs.length);
+              const incomingJobs = data.data.jobs;
+              const incomingTotal = data.data.totalJobs || incomingJobs.length;
+              setJobs(incomingJobs);
+              setTotalJobs(incomingTotal);
               setShowJobPanel(true);
 
-              addBotMessage(data.botMessage, {
-                customComponent: (
-                  <JobListings
-                    jobs={data.data.jobs}
-                    totalJobs={data.data.totalJobs || data.data.jobs.length}
-                    onApply={handleApplySingle}
-                    onApplyAll={handleApplyAll}
-                    onViewDetail={handleViewDetail}
-                    onSave={handleSave}
-                    onEmailHM={handleOpenEmail}
-                    onRemoveJob={handleRemoveJob}
-                  />
-                ),
-              }, debugInfo);
+              if (incomingJobs.length <= 5) {
+                // Inline rich job cards in chat
+                addBotMessage(data.botMessage, {
+                  customComponent: (
+                    <ChatJobCards
+                      jobs={incomingJobs}
+                      totalJobs={incomingTotal}
+                      onApply={handleApplySingle}
+                      onEmailHM={handleOpenEmail}
+                      onViewDetail={handleViewDetail}
+                    />
+                  ),
+                }, debugInfo);
+              } else {
+                // Text-only message, jobs visible in right panel
+                addBotMessage(data.botMessage, undefined, debugInfo);
+              }
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
             }
@@ -514,8 +582,9 @@ export function ChatLayout() {
     ]
   );
 
-  // Handle initial query from homepage
+  // Handle initial query from homepage — wait until init completes
   useEffect(() => {
+    if (initLoading) return;
     if (initialQueryHandled.current) return;
     const q = searchParams.get("q");
     if (q) {
@@ -523,7 +592,7 @@ export function ChatLayout() {
       setTimeout(() => handleUserMessage(q), 500);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, initLoading]);
 
   return (
     <div className="flex h-dvh bg-background">

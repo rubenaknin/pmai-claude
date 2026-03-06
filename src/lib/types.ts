@@ -102,6 +102,16 @@ export interface BulkResult {
   message?: string;
 }
 
+export interface UserStatusResponse {
+  isLoggedIn: boolean;
+  hasResume?: boolean;
+  userFirstName?: string;
+  dynamicTitle?: string;
+  dynamicLocation?: string;
+  credits?: number;
+  userPlan?: string;
+}
+
 /** Raw job document from CouchDB (returned by GET /jobs) */
 export interface PitchMeApiJob {
   _id?: string;
