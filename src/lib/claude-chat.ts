@@ -70,6 +70,7 @@ SEARCH RULES:
 - If the user gives no specifics at all, ask what they're looking for and where
 - NEVER call search_jobs with only a location and no title (unless the profile provides the title)
 - NEVER call search_jobs with only a title and no location — ask where they want to work
+- IMPORTANT: Once you have gathered BOTH the title and location (either from the current message or from the conversation history), you MUST call search_jobs immediately in that same turn. Do NOT just acknowledge — actually search. The results will appear in the right panel automatically.
 
 RESUME & EMAIL GENERATION:
 - To generate a resume or email, you MUST have the job's ID, URL, title, company, and description
@@ -90,7 +91,8 @@ Guidelines:
 - When the user wants to apply or email, confirm the action and execute it
 - If the user references a specific job from previous results, use the job context to identify it
 - Never make up job listings — only show real results from the search tool
-- When no tool is needed (general questions, chitchat), just respond naturally without calling any tools`;
+- When no tool is needed (general questions, chitchat), just respond naturally without calling any tools
+- ALWAYS use proper capitalization, spelling, and grammar in your responses. Fix any typos from the user's input when you reference their words (e.g. "creteil" → "Créteil", "nyc" → "NYC", "frontend enginer" → "Frontend Engineer").`;
 
   if (userStatus) {
     const parts: string[] = [];
@@ -151,6 +153,11 @@ function extractRole(message: string): string | null {
   return null;
 }
 
+/** Capitalize each word for display (proper noun style) */
+function properCase(str: string): string {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Extract a location from the message (e.g. "in New York" → "New York") */
 function extractLocation(message: string): string | null {
   const match = message.match(/\b(?:in|near|around|at)\s+(.+?)(?:\s*[.!?]?\s*$)/i);
@@ -182,7 +189,7 @@ function isJobSearchIntent(message: string): boolean {
  * Returns true for purely conversational messages that should NEVER trigger tool calls.
  * This is the architectural gate — if true, the LLM is invoked WITHOUT tools bound.
  */
-function isConversational(message: string): boolean {
+function isConversational(message: string, hasHistory: boolean): boolean {
   const lower = message.toLowerCase().trim();
 
   // Questions (ends with ?)
@@ -191,8 +198,8 @@ function isConversational(message: string): boolean {
   // Starts with question words
   if (/^(do you|don't you|dont you|can you|could you|have you|did you|are you|is there|what|how|why|where|when|who|which)\b/i.test(lower)) return true;
 
-  // Greetings, thanks, short conversational
-  if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay|cool|great|nice|awesome|got it|sure|yes|no|yep|nope)\b/i.test(lower)) return true;
+  // Pure greetings/thanks with no follow-up content
+  if (/^(hey|hi|hello|yo|sup|thanks|thank you|ok|okay|cool|great|nice|awesome|got it)([.!]?\s*)$/i.test(lower)) return true;
 
   // Resume/profile/account questions without action verbs
   if (/\b(my resume|my cv|my profile|my account|my info|my data|about me)\b/i.test(lower) && !/\b(find|search|match|apply|generate|create|tailor|send|email)\b/i.test(lower)) return true;
@@ -200,8 +207,12 @@ function isConversational(message: string): boolean {
   // Explicit action verbs → needs tools
   if (/\b(find|search|look for|get me|show me|apply|email|generate|match|tailor|send)\b/i.test(lower)) return false;
 
-  // Short messages without action intent are conversational
-  if (lower.split(/\s+/).length <= 6 && !/\b(find|search|apply|email|jobs?|resume)\b/i.test(lower)) return true;
+  // If there's conversation history, short messages are likely follow-up answers
+  // (e.g. "NYC", "frontend engineer", "yes") — let tools be available
+  if (hasHistory) return false;
+
+  // First message, no action intent, short → conversational
+  if (lower.split(/\s+/).length <= 4 && !/\b(find|search|apply|email|jobs?|resume)\b/i.test(lower)) return true;
 
   // Default: not conversational, let tools be available
   return false;
@@ -228,8 +239,9 @@ async function handleFirstMessage(
   const greeting = name ? `Sure, ${name}!` : "Sure!";
 
   // Resolve the effective title and location (user-specified takes priority, then profile)
-  const effectiveTitle = role || profileTitle;
-  const effectiveLocation = location || profileLocation;
+  // Proper-case user input for clean display
+  const effectiveTitle = role ? properCase(role) : profileTitle;
+  const effectiveLocation = location ? properCase(location) : profileLocation;
 
   // ── Both title and location available → search immediately ──
   if (effectiveTitle && effectiveLocation) {
@@ -327,7 +339,7 @@ export async function processChat(
 
   // Gate: only bind tools when the message could require an action.
   // Conversational messages get the plain LLM — zero chance of spurious tool calls.
-  const conversational = isConversational(userMessage);
+  const conversational = isConversational(userMessage, history.length > 0);
   const model = conversational ? llm : llm.bindTools(TOOLS);
 
   try {

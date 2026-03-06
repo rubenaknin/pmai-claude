@@ -26,14 +26,28 @@ interface Conversation {
 }
 
 /** Generate a short title from the first user message */
+/** Proper-case each word for display */
+function titleCase(str: string): string {
+  // Short words that stay lowercase (unless first word)
+  const minor = new Set(["a", "an", "the", "in", "on", "at", "for", "to", "of", "and", "or", "but", "is", "me"]);
+  return str
+    .split(/\s+/)
+    .map((w, i) => {
+      const lower = w.toLowerCase();
+      if (i > 0 && minor.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 function generateTitle(message: string): string {
   const cleaned = message.trim().replace(/[.!?]+$/, "");
   // Strip common filler prefixes
   const stripped = cleaned
     .replace(/^(hey|hi|hello|please|can you|could you|i want to|i'd like to|i need to)\s+/i, "")
     .replace(/^(find me|search for|look for|get me)\s+/i, "");
-  const capitalized = stripped.charAt(0).toUpperCase() + stripped.slice(1);
-  return capitalized.length > 40 ? capitalized.slice(0, 37) + "..." : capitalized;
+  const titled = titleCase(stripped);
+  return titled.length > 40 ? titled.slice(0, 37) + "..." : titled;
 }
 
 export function ChatLayout() {
