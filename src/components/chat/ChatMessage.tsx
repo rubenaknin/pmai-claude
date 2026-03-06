@@ -2,8 +2,10 @@
 
 import { ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { TypingIndicator } from "./TypingIndicator";
 import { NetworkDebugPanel } from "./NetworkDebugPanel";
+import type { Job } from "./jobData";
 import type { DebugInfo } from "@/lib/types";
 
 export type MessageRole = "bot" | "user";
@@ -15,13 +17,15 @@ export interface Message {
   customComponent?: ReactNode;
   isTyping?: boolean;
   _debug?: DebugInfo;
+  jobsSnapshot?: { jobs: Job[]; totalJobs: number };
 }
 
 interface ChatMessageProps {
   message: Message;
+  onLoadJobsSnapshot?: (jobs: Job[], totalJobs: number) => void;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
   const isBot = message.role === "bot";
 
   return (
@@ -52,6 +56,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
         {message.customComponent}
+        {message.jobsSnapshot && onLoadJobsSnapshot && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-7 mt-1 gap-1.5"
+            onClick={() =>
+              onLoadJobsSnapshot(
+                message.jobsSnapshot!.jobs,
+                message.jobsSnapshot!.totalJobs
+              )
+            }
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /><rect width="7" height="7" x="3" y="3" rx="1" /></svg>
+            Show jobs ({message.jobsSnapshot.totalJobs})
+          </Button>
+        )}
         {isBot && message._debug && (
           <NetworkDebugPanel debug={message._debug} />
         )}

@@ -2,12 +2,18 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface ResumePreviewCardProps {
   jobTitle?: string;
   company?: string;
   highlights?: string[];
   tags?: string[];
+  pdfFileName?: string;
+  onDownload?: () => void;
+  onPreviewEdit?: () => void;
+  onApply?: () => void;
+  onEmailHM?: () => void;
 }
 
 export function ResumePreviewCard({
@@ -15,6 +21,10 @@ export function ResumePreviewCard({
   company = "Top Match",
   highlights,
   tags,
+  onDownload,
+  onPreviewEdit,
+  onApply,
+  onEmailHM,
 }: ResumePreviewCardProps) {
   const displayHighlights = highlights && highlights.length > 0
     ? highlights.slice(0, 4)
@@ -27,6 +37,8 @@ export function ResumePreviewCard({
   const displayTags = tags && tags.length > 0
     ? tags.slice(0, 4)
     : ["React", "TypeScript", "Next.js", "Tailwind"];
+
+  const hasActions = onDownload || onPreviewEdit || onApply || onEmailHM;
 
   return (
     <Card className="max-w-sm border-border/50 bg-card">
@@ -59,6 +71,30 @@ export function ResumePreviewCard({
               </Badge>
             ))}
           </div>
+          {hasActions && (
+            <div className="flex flex-wrap gap-1.5 pt-2 border-t border-border/30">
+              {onDownload && (
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={onDownload}>
+                  Download
+                </Button>
+              )}
+              {onPreviewEdit && (
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={onPreviewEdit}>
+                  Preview &amp; Edit
+                </Button>
+              )}
+              {onApply && (
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={onApply}>
+                  Apply to job
+                </Button>
+              )}
+              {onEmailHM && (
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={onEmailHM}>
+                  Intro email
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

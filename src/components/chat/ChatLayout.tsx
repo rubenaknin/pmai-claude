@@ -13,7 +13,7 @@ import { EmailComposer } from "./EmailComposer";
 import { ApplicationStatusCard } from "./ApplicationStatusCard";
 import { ResumePreviewCard } from "./ResumePreviewCard";
 import { Job } from "./jobData";
-import type { ChatHistoryMessage, ChatApiResponse, EmailData, ResumeData, DebugInfo, UserStatusResponse } from "@/lib/types";
+import type { ChatHistoryMessage, ChatApiResponse, ActionType, EmailData, ResumeData, DebugInfo, UserStatusResponse } from "@/lib/types";
 
 interface Conversation {
   id: string;
@@ -48,6 +48,58 @@ function generateTitle(message: string): string {
     .replace(/^(find me|search for|look for|get me)\s+/i, "");
   const titled = titleCase(stripped);
   return titled.length > 40 ? titled.slice(0, 37) + "..." : titled;
+}
+
+/**
+ * Append an [Action: ...] tag to a bot message for the LLM chat history,
+ * so the model knows what happened as a result of the user's message.
+ */
+function enrichAssistantContent(
+  botMessage: string,
+  actionType: ActionType | undefined,
+  data: ChatApiResponse["data"],
+  toolInput?: Record<string, unknown>
+): string {
+  if (!actionType || actionType === "general" || actionType === "error") return botMessage;
+
+  let tag = "";
+  switch (actionType) {
+    case "show_jobs": {
+      const total = data?.totalJobs ?? data?.jobs?.length ?? 0;
+      const parts: string[] = [];
+      if (toolInput?.search) parts.push(`search='${toolInput.search}'`);
+      if (toolInput?.location) parts.push(`location='${toolInput.location}'`);
+      tag = `[Action: search_jobs(${parts.join(", ")}) → ${total} results]`;
+      break;
+    }
+    case "show_resume": {
+      const title = data?.resume?.jobTitle ?? "";
+      const company = data?.resume?.company ?? "";
+      tag = `[Action: show_resume(job='${title}', company='${company}')]`;
+      break;
+    }
+    case "show_email": {
+      const company = data?.email?.company ?? "";
+      tag = `[Action: show_email(company='${company}')]`;
+      break;
+    }
+    case "apply_result": {
+      tag = `[Action: apply_result(jobId='${data?.applyResult?.jobId ?? ""}')]`;
+      break;
+    }
+    case "bulk_apply_result": {
+      const count = data?.bulkResults?.length ?? 0;
+      tag = `[Action: bulk_apply(${count} jobs)]`;
+      break;
+    }
+    case "bulk_email_result": {
+      const count = data?.bulkResults?.length ?? 0;
+      tag = `[Action: bulk_email(${count} jobs)]`;
+      break;
+    }
+  }
+
+  return tag ? `${botMessage}\n${tag}` : botMessage;
 }
 
 export function ChatLayout() {
@@ -378,6 +430,16 @@ export function ChatLayout() {
       .join("\n");
   }, [jobs]);
 
+  // --- Load jobs snapshot (from "Show jobs" button in chat) ---
+  const handleLoadJobsSnapshot = useCallback(
+    (snapshotJobs: Job[], snapshotTotal: number) => {
+      setJobs(snapshotJobs);
+      setTotalJobs(snapshotTotal);
+      setShowJobPanel(true);
+    },
+    []
+  );
+
   // --- Bot messaging helper ---
   const addBotMessage = useCallback(
     (content: string, extra?: Partial<Message>, debug?: DebugInfo) => {
@@ -553,12 +615,32 @@ export function ChatLayout() {
     [addMatchingId, removeMatchingId, updateJob]
   );
 
+  // --- Resume CTA helpers ---
+  const handleDownloadResume = useCallback((pdfFileName?: string) => {
+    if (pdfFileName) {
+      window.open(`/api/resume/download/${pdfFileName}`, "_blank");
+    }
+  }, []);
+
+  const handlePreviewEditResume = useCallback((html: string) => {
+    // Open resume HTML in a new tab for preview/edit
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    }
+  }, []);
+
   // --- Match resume for a single job card click (posts bot message) ---
   const handleMatchResumeSingle = useCallback(
     async (job: Job) => {
       const result = await handleMatchResume(job);
       if (result.success && result.data) {
-        const data = result.data as { threeExplanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string } };
+        const data = result.data as {
+          html?: string;
+          pdfFileName?: string;
+          threeExplanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string };
+        };
         addBotMessage(
           `Here's your resume tailored for ${job.title} at ${job.company}:`,
           {
@@ -566,6 +648,7 @@ export function ChatLayout() {
               <ResumePreviewCard
                 jobTitle={job.title}
                 company={job.company}
+                pdfFileName={data.pdfFileName}
                 highlights={
                   data.threeExplanations
                     ? [
@@ -579,6 +662,10 @@ export function ChatLayout() {
                       ].filter(Boolean) as string[]
                     : undefined
                 }
+                onDownload={data.pdfFileName ? () => handleDownloadResume(data.pdfFileName) : undefined}
+                onPreviewEdit={data.html ? () => handlePreviewEditResume(data.html!) : undefined}
+                onApply={() => handleApplySingle(job.id)}
+                onEmailHM={() => handleOpenEmail(job)}
               />
             ),
           }
@@ -588,7 +675,7 @@ export function ChatLayout() {
         addBotMessage(`Sorry, I couldn't generate the tailored resume: ${reason}. Please try again.`);
       }
     },
-    [handleMatchResume, addBotMessage]
+    [handleMatchResume, addBotMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]
   );
 
   // --- Match resume for all selected jobs ---
@@ -689,6 +776,11 @@ export function ChatLayout() {
             jobTitle={firstJob?.title}
             company={firstJob?.company}
             highlights={resumeData?.highlights}
+            pdfFileName={resumeData?.pdfFileName}
+            onDownload={resumeData?.pdfFileName ? () => handleDownloadResume(resumeData?.pdfFileName) : undefined}
+            onPreviewEdit={resumeData?.html ? () => handlePreviewEditResume(resumeData!.html) : undefined}
+            onApply={firstJob ? () => handleApplySingle(firstJob.id) : undefined}
+            onEmailHM={firstJob ? () => handleOpenEmail(firstJob) : undefined}
           />
         ),
       }
@@ -706,7 +798,7 @@ export function ChatLayout() {
       "Yes, email all hiring managers",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage, jobs, resumeData?.highlights]);
+  }, [addBotMessage, jobs, resumeData, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]);
 
   // --- Email all ---
   const handleEmailAll = useCallback(async () => {
@@ -799,6 +891,11 @@ export function ChatLayout() {
             `Done! I've submitted ${targetJobs.length} tailored applications.`,
             { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} /> }
           );
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: bulk_apply(${targetJobs.length} selected jobs)]` },
+          ]);
           setSuggestions(["Yes, email all hiring managers", "Find more jobs"]);
           return;
         }
@@ -820,6 +917,11 @@ export function ChatLayout() {
             "Done! I've sent a tailored email to each hiring manager.",
             { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} /> }
           );
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: bulk_email(${count} selected jobs)]` },
+          ]);
           setSuggestions(["Find more jobs", "Help me prep for interviews"]);
           return;
         }
@@ -829,6 +931,11 @@ export function ChatLayout() {
           setIsTyping(false);
           const snapshot = [...selectedJobs];
           clearSelection();
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: match_resume(${snapshot.length} selected jobs)]` },
+          ]);
           await handleMatchResumeForSelected(snapshot);
           return;
         }
@@ -839,6 +946,11 @@ export function ChatLayout() {
         lower.includes("apply to all")
       ) {
         setIsTyping(false);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: `[Action: bulk_apply(${jobs.length} jobs)]` },
+        ]);
         await handleApplyAll();
         return;
       }
@@ -848,6 +960,11 @@ export function ChatLayout() {
         lower.includes("email all")
       ) {
         setIsTyping(false);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: `[Action: bulk_email(${jobs.length} jobs)]` },
+        ]);
         await handleEmailAll();
         return;
       }
@@ -868,15 +985,21 @@ export function ChatLayout() {
         const data: ChatApiResponse = await res.json();
         setIsTyping(false);
 
-        // Update chat history
+        // Update chat history (with action metadata for LLM context)
+        const debugInfo = data._debug;
+        const enrichedContent = enrichAssistantContent(
+          data.botMessage,
+          data.actionType,
+          data.data,
+          debugInfo?.toolInput
+        );
         setChatHistory((prev) => [
           ...prev,
           { role: "user", content },
-          { role: "assistant", content: data.botMessage },
+          { role: "assistant", content: enrichedContent },
         ]);
 
         // Dispatch based on actionType
-        const debugInfo = data._debug;
         switch (data.actionType) {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
@@ -886,10 +1009,13 @@ export function ChatLayout() {
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
 
+              const snapshot = { jobs: incomingJobs, totalJobs: incomingTotal };
+
               if (incomingJobs.length <= 5) {
                 // Inline rich job cards in chat — short message
                 const shortMsg = `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`;
                 addBotMessage(shortMsg, {
+                  jobsSnapshot: snapshot,
                   customComponent: (
                     <ChatJobCards
                       jobs={incomingJobs}
@@ -905,7 +1031,7 @@ export function ChatLayout() {
               } else {
                 // >5 jobs: short text only, jobs visible in right panel
                 const shortMsg = `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`;
-                addBotMessage(shortMsg, undefined, debugInfo);
+                addBotMessage(shortMsg, { jobsSnapshot: snapshot }, debugInfo);
               }
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
@@ -914,13 +1040,25 @@ export function ChatLayout() {
           }
           case "show_resume": {
             if (data.data?.resume) {
-              setResumeData(data.data.resume);
+              const resume = data.data.resume;
+              setResumeData(resume);
+              // Try to find the matching job for CTA actions
+              const matchJob = jobs.find(
+                (j) =>
+                  (resume.jobTitle && j.title.toLowerCase() === resume.jobTitle.toLowerCase()) &&
+                  (resume.company && j.company.toLowerCase() === resume.company.toLowerCase())
+              );
               addBotMessage(data.botMessage, {
                 customComponent: (
                   <ResumePreviewCard
-                    jobTitle={data.data.resume.jobTitle}
-                    company={data.data.resume.company}
-                    highlights={data.data.resume.highlights}
+                    jobTitle={resume.jobTitle}
+                    company={resume.company}
+                    highlights={resume.highlights}
+                    pdfFileName={resume.pdfFileName}
+                    onDownload={resume.pdfFileName ? () => handleDownloadResume(resume.pdfFileName) : undefined}
+                    onPreviewEdit={resume.html ? () => handlePreviewEditResume(resume.html) : undefined}
+                    onApply={matchJob ? () => handleApplySingle(matchJob.id) : undefined}
+                    onEmailHM={matchJob ? () => handleOpenEmail(matchJob) : undefined}
                   />
                 ),
               }, debugInfo);
@@ -1050,12 +1188,17 @@ export function ChatLayout() {
         const data: ChatApiResponse = await res.json();
         setIsTyping(false);
 
+        const debugInfo = data._debug;
+        const enrichedContent = enrichAssistantContent(
+          data.botMessage,
+          data.actionType,
+          data.data,
+          debugInfo?.toolInput
+        );
         setChatHistory([
           { role: "user", content: initialQuery },
-          { role: "assistant", content: data.botMessage },
+          { role: "assistant", content: enrichedContent },
         ]);
-
-        const debugInfo = data._debug;
         switch (data.actionType) {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
@@ -1065,10 +1208,13 @@ export function ChatLayout() {
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
 
+              const snapshot = { jobs: incomingJobs, totalJobs: incomingTotal };
+
               if (incomingJobs.length <= 5) {
                 addBotMessage(
                   `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`,
                   {
+                    jobsSnapshot: snapshot,
                     customComponent: (
                       <ChatJobCards
                         jobs={incomingJobs}
@@ -1086,7 +1232,7 @@ export function ChatLayout() {
               } else {
                 addBotMessage(
                   `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`,
-                  undefined,
+                  { jobsSnapshot: snapshot },
                   debugInfo
                 );
               }
@@ -1247,7 +1393,11 @@ export function ChatLayout() {
             )}
 
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage
+                key={msg.id}
+                message={msg}
+                onLoadJobsSnapshot={handleLoadJobsSnapshot}
+              />
             ))}
             {isTyping && (
               <ChatMessage
