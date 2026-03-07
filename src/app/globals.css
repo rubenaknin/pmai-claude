@@ -160,7 +160,7 @@
   50% { opacity: 0.7; }
 }
 
-@keyframes progress-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+@keyframes progress-fill {
+  0% { width: 0%; }
+  100% { width: 95%; }
 }

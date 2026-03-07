@@ -8,7 +8,7 @@ import { NetworkDebugPanel } from "./NetworkDebugPanel";
 import type { Job } from "./jobData";
 import type { DebugInfo } from "@/lib/types";
 
-export type MessageRole = "bot" | "user";
+export type MessageRole = "bot" | "user" | "action";
 
 export interface Message {
   id: string;
@@ -26,6 +26,17 @@ interface ChatMessageProps {
 }
 
 export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
+  // Action log messages — subtle centered line
+  if (message.role === "action") {
+    return (
+      <div className="flex justify-center py-0.5">
+        <span className="text-[11px] italic text-muted-foreground/60">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
   const isBot = message.role === "bot";
 
   return (

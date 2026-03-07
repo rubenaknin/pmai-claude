@@ -15,6 +15,22 @@ import { Badge } from "@/components/ui/badge";
 import { Job, getHiringManager } from "./jobData";
 import type { EmailData } from "@/lib/types";
 
+/** Strip HTML tags from email body and decode common entities */
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 interface EmailComposerProps {
   job: Job | null;
   open: boolean;
@@ -53,7 +69,7 @@ export function EmailComposer({
   // Determine email content: prefer API data, fallback to generated
   const fallback = job ? generateFallbackEmail(job) : { subject: "", body: "" };
   const initialSubject = emailData?.subject || fallback.subject;
-  const initialBody = emailData?.body || fallback.body;
+  const initialBody = stripHtmlTags(emailData?.body || fallback.body);
 
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
@@ -65,7 +81,7 @@ export function EmailComposer({
   if (job && job.id !== lastJobId) {
     const email = emailData || generateFallbackEmail(job);
     setSubject("subject" in email ? email.subject : "");
-    setBody(email.body);
+    setBody(stripHtmlTags(email.body));
     setLastJobId(job.id);
     setLastEmailDataKey(emailData ? emailData.subject : null);
   }
@@ -77,7 +93,7 @@ export function EmailComposer({
     job?.id === lastJobId
   ) {
     setSubject(emailData.subject);
-    setBody(emailData.body);
+    setBody(stripHtmlTags(emailData.body));
     setLastEmailDataKey(emailData.subject);
   }
 
@@ -90,7 +106,8 @@ export function EmailComposer({
   const recipientTitle =
     emailData?.recipientTitle ||
     job.status.hiringManagerTitle ||
-    getHiringManager(job.company).title;
+    getHiringManager(job.company).title ||
+    "Hiring Team";
 
   const handleSend = () => {
     onSend(job.id);
@@ -99,7 +116,7 @@ export function EmailComposer({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>

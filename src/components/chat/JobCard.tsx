@@ -190,7 +190,7 @@ export function JobCard({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
             {hasApplyError ? (
               <div className="flex items-center gap-0">
                 <Button
@@ -233,7 +233,7 @@ export function JobCard({
               >
                 {isMatching ? (
                   <>
-                    <span className="absolute inset-0 bg-primary/15 animate-[progress-sweep_1.5s_ease-in-out_infinite]" />
+                    <span className="absolute inset-y-0 left-0 bg-primary/15 animate-[progress-fill_30s_ease-out_forwards]" />
                     <span className="relative z-10 flex items-center gap-1">Matching...</span>
                   </>
                 ) : job.status.resumeGenerated ? (
@@ -244,7 +244,7 @@ export function JobCard({
                 ) : (
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
-                    Match my resume
+                    {compact ? "Match" : "Match my resume"}
                   </>
                 )}
               </Button>

@@ -130,7 +130,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
           <div className="border-t border-border/30 my-2" />
 
           {/* Actions */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {hasApplyError ? (
               <div className="flex items-center gap-0">
                 <Button
@@ -170,7 +170,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
             >
               {isMatching ? (
                 <>
-                  <span className="absolute inset-0 bg-primary/15 animate-[progress-sweep_1.5s_ease-in-out_infinite]" />
+                  <span className="absolute inset-y-0 left-0 bg-primary/15 animate-[progress-fill_30s_ease-out_forwards]" />
                   <span className="relative z-10 flex items-center gap-1">Matching...</span>
                 </>
               ) : job.status.resumeGenerated ? (

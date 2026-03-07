@@ -2,8 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ChatMessage, Message } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { JobPanel } from "./JobPanel";
@@ -156,12 +162,20 @@ export function ChatLayout() {
   // Job selection state
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
 
+  // Processing state for stop button
+  const [isProcessing, setIsProcessing] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Action log settings
+  const [showActionLogs, setShowActionLogs] = useState(true);
+
   // Drag & drop state for the chat area
   const [isChatDragging, setIsChatDragging] = useState(false);
   const chatDragCounter = useRef(0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
+  const pendingMatchJobRef = useRef<Job | null>(null);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -256,6 +270,19 @@ export function ChatLayout() {
     setJobs((prev) => prev.map((j) => (j.id === jobId ? updater(j) : j)));
   }, []);
 
+  // --- Action log helper ---
+  const addActionMessage = useCallback(
+    (content: string) => {
+      const msg: Message = {
+        id: `action-${Date.now()}-${Math.random()}`,
+        role: "action",
+        content,
+      };
+      setMessages((prev) => [...prev, msg]);
+    },
+    []
+  );
+
   const handleApplySingle = useCallback(
     async (jobId: string) => {
       const job = jobs.find((j) => j.id === jobId);
@@ -273,6 +300,7 @@ export function ChatLayout() {
         ...j,
         status: { ...j.status, applied: true, appliedAt: "just now" },
       }));
+      addActionMessage(`Applied to ${job.title} at ${job.company}`);
 
       // Call API if we have apiData
       if (job._apiData?.url && job._apiData?.jobId) {
@@ -320,7 +348,7 @@ export function ChatLayout() {
         }
       }
     },
-    [jobs, updateJob]
+    [jobs, updateJob, addActionMessage]
   );
 
   const handleSave = useCallback(
@@ -356,6 +384,7 @@ export function ChatLayout() {
       setEmailJob(job);
       setEmailData(null);
       setEmailLoading(true);
+      addActionMessage(`Drafting email for ${job.title} at ${job.company}`);
 
       // Call email API if we have apiData
       if (job._apiData?.jobId) {
@@ -388,7 +417,7 @@ export function ChatLayout() {
       }
       setEmailLoading(false);
     },
-    []
+    [addActionMessage]
   );
 
   const handleRemoveJob = useCallback(
@@ -474,6 +503,15 @@ export function ChatLayout() {
     },
     []
   );
+
+  // --- Stop handler ---
+  const handleStop = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsProcessing(false);
+    setMatchingJobIds(new Set());
+    addBotMessage("Action stopped.");
+  }, [addBotMessage]);
 
   // --- File upload handler ---
   const handleFileUpload = useCallback(
@@ -677,6 +715,20 @@ export function ChatLayout() {
   // --- Match resume for a single job card click (posts bot message) ---
   const handleMatchResumeSingle = useCallback(
     async (job: Job) => {
+      // If jobs are selected, ask for clarification
+      if (selectedJobIds.size > 0 && !selectedJobIds.has(job.id)) {
+        pendingMatchJobRef.current = job;
+        addBotMessage(
+          `You have ${selectedJobIds.size} job${selectedJobIds.size !== 1 ? "s" : ""} selected. Would you like to match just this job, or all selected jobs?`
+        );
+        setSuggestions([
+          `Just ${job.company}`,
+          `Match resume for selected (${selectedJobIds.size})`,
+        ]);
+        return;
+      }
+
+      addActionMessage(`Matching resume for ${job.title} at ${job.company}`);
       const result = await handleMatchResume(job);
       if (result.success && result.data) {
         const data = result.data as {
@@ -719,13 +771,17 @@ export function ChatLayout() {
         addBotMessage(`Sorry, I couldn't generate the tailored resume: ${reason}. Please try again.`);
       }
     },
-    [handleMatchResume, addBotMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]
+    [handleMatchResume, addBotMessage, addActionMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail, selectedJobIds]
   );
 
   // --- Match resume for all selected jobs ---
   const handleMatchResumeForSelected = useCallback(
     async (selectedJobs: Job[]) => {
       if (selectedJobs.length === 0) return;
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      setIsProcessing(true);
 
       // Show spinners on all at once
       for (const job of selectedJobs) {
@@ -741,6 +797,7 @@ export function ChatLayout() {
 
       // Process sequentially with inter-job delay
       for (let i = 0; i < selectedJobs.length; i++) {
+        if (controller.signal.aborted) break;
         const job = selectedJobs[i];
         const result = await handleMatchResume(job);
         if (result.success) {
@@ -756,7 +813,11 @@ export function ChatLayout() {
         }
       }
 
+      setIsProcessing(false);
+      abortControllerRef.current = null;
+
       // Post summary
+      if (controller.signal.aborted) return;
       if (failCount === 0) {
         addBotMessage(
           `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.`
@@ -772,21 +833,29 @@ export function ChatLayout() {
 
   // --- Apply all ---
   const handleApplyAll = useCallback(async () => {
-    const count = jobs.length;
+    // If jobs are selected, apply only to those; otherwise apply to all
+    const targetJobs = selectedJobIds.size > 0
+      ? jobs.filter((j) => selectedJobIds.has(j.id))
+      : jobs;
+    const count = targetJobs.length;
+    const targetIds = new Set(targetJobs.map((j) => j.id));
+
     setJobs((prev) =>
-      prev.map((j) => ({
-        ...j,
-        status: { ...j.status, applied: true, appliedAt: "just now" },
-      }))
+      prev.map((j) =>
+        targetIds.has(j.id)
+          ? { ...j, status: { ...j.status, applied: true, appliedAt: "just now" } }
+          : j
+      )
     );
+    if (selectedJobIds.size > 0) clearSelection();
     setSuggestions([]);
 
     addBotMessage(
-      `Applying to all ${count} jobs... I'm tailoring your resume for each position to maximize your chances.`
+      `Applying to ${count} job${count !== 1 ? "s" : ""}... I'm tailoring your resume for each position to maximize your chances.`
     );
 
     // Fire bulk resume generation in background for the first job
-    const firstJob = jobs[0];
+    const firstJob = targetJobs[0];
     if (firstJob?._apiData?.url && firstJob?._apiData?.jobId) {
       try {
         const res = await fetch("/api/resume/generate", {
@@ -837,17 +906,17 @@ export function ChatLayout() {
     addBotMessage(
       `All done! I've submitted ${count} tailored applications.`,
       {
-        customComponent: <ApplicationStatusCard jobCount={count} />,
+        customComponent: <ApplicationStatusCard jobCount={count} onShowJobs={() => setShowJobPanel(true)} />,
       }
     );
     addBotMessage(
-      "Would you like me to email the hiring managers directly? A personalized message can significantly increase your response rate."
+      "Would you like me to generate personalized emails to the hiring managers? You can review and edit them before sending."
     );
     setSuggestions([
-      "Yes, email all hiring managers",
+      "Yes, generate emails for me",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage, jobs, resumeData, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]);
+  }, [addBotMessage, jobs, selectedJobIds, clearSelection, resumeData, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]);
 
   // --- Email all ---
   const handleEmailAll = useCallback(async () => {
@@ -866,7 +935,7 @@ export function ChatLayout() {
       "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
       {
         customComponent: (
-          <ApplicationStatusCard jobCount={count} emailsSent={true} />
+          <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} />
         ),
       }
     );
@@ -920,6 +989,20 @@ export function ChatLayout() {
       // Check for quick intent matches (button-like phrases)
       const lower = content.toLowerCase();
 
+      // Handle pending match clarification (from multi-select conflict)
+      if (pendingMatchJobRef.current && lower.startsWith("just ")) {
+        const pendingJob = pendingMatchJobRef.current;
+        pendingMatchJobRef.current = null;
+        setIsTyping(false);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: `[Action: match_resume(${pendingJob.title} at ${pendingJob.company})]` },
+        ]);
+        await handleMatchResumeSingle(pendingJob);
+        return;
+      }
+
       // Selection-based actions
       if (lower.includes("apply to selected") || lower.includes("apply for selected")) {
         if (selectedJobs.length > 0) {
@@ -938,7 +1021,7 @@ export function ChatLayout() {
           );
           addBotMessage(
             `Done! I've submitted ${targetJobs.length} tailored applications.`,
-            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} /> }
+            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} onShowJobs={() => setShowJobPanel(true)} /> }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -964,7 +1047,7 @@ export function ChatLayout() {
           addBotMessage(`Sending personalized emails to hiring managers at ${count} selected companies...`);
           addBotMessage(
             "Done! I've sent a tailored email to each hiring manager.",
-            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} /> }
+            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} /> }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -1001,6 +1084,19 @@ export function ChatLayout() {
           { role: "assistant", content: `[Action: bulk_apply(${jobs.length} jobs)]` },
         ]);
         await handleApplyAll();
+        return;
+      }
+      if (
+        lower.includes("generate email") ||
+        lower.includes("yes, generate email")
+      ) {
+        setIsTyping(false);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: `[Action: bulk_email(${jobs.length} jobs)]` },
+        ]);
+        await handleEmailAll();
         return;
       }
       if (
@@ -1134,7 +1230,7 @@ export function ChatLayout() {
                 }))
               );
               addBotMessage(data.botMessage, {
-                customComponent: <ApplicationStatusCard jobCount={count} />,
+                customComponent: <ApplicationStatusCard jobCount={count} onShowJobs={() => setShowJobPanel(true)} />,
               }, debugInfo);
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
@@ -1152,7 +1248,7 @@ export function ChatLayout() {
               );
               addBotMessage(data.botMessage, {
                 customComponent: (
-                  <ApplicationStatusCard jobCount={count} emailsSent={true} />
+                  <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} />
                 ),
               }, debugInfo);
             } else {
@@ -1190,6 +1286,7 @@ export function ChatLayout() {
       handleOpenEmail,
       handleRemoveJob,
       handleMatchResumeForSelected,
+      handleMatchResumeSingle,
       userStatus,
       selectedJobs,
       selectedJobIds,
@@ -1326,7 +1423,7 @@ export function ChatLayout() {
         }`}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-4">
-          <span className="font-semibold text-sm">PitchMeAI</span>
+          <Image src="/logo.svg" alt="PitchMeAI" width={80} height={26} className="h-7 w-auto" />
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
@@ -1400,16 +1497,14 @@ export function ChatLayout() {
             </div>
           </div>
         )}
-        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4">
+        <div className="flex shrink-0 items-center gap-2 px-3 py-1.5">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>
           </button>
-          <h1 className="text-sm font-medium truncate flex-1">
-            PitchMeAI
-          </h1>
+          <div className="flex-1" />
           {!showJobPanel && jobs.length > 0 && (
             <Button
               variant="outline"
@@ -1421,6 +1516,25 @@ export function ChatLayout() {
               Show Jobs
             </Button>
           )}
+          {/* Settings gear */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" title="Settings">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-52 p-3" align="end" side="bottom">
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showActionLogs}
+                  onChange={(e) => setShowActionLogs(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border/50 text-primary focus:ring-primary/30"
+                />
+                Show action logs in chat
+              </label>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
@@ -1439,10 +1553,15 @@ export function ChatLayout() {
                 <p className="text-sm text-muted-foreground max-w-sm">
                   Tell me what kind of jobs you're looking for, or upload your resume and I'll find the best matches.
                 </p>
+                <p className="text-xs text-muted-foreground/50 mt-2">
+                  or drag &amp; drop your resume here
+                </p>
               </div>
             )}
 
-            {messages.map((msg) => (
+            {messages
+              .filter((msg) => showActionLogs || msg.role !== "action")
+              .map((msg) => (
               <ChatMessage
                 key={msg.id}
                 message={msg}
@@ -1465,6 +1584,8 @@ export function ChatLayout() {
             suggestions={suggestions}
             selectedJobs={selectedJobs}
             onClearSelection={clearSelection}
+            isProcessing={isProcessing}
+            onStop={handleStop}
           />
         </div>
       </div>

@@ -328,6 +328,11 @@ export function JobPanel({
               compact
             />
           ))}
+          {totalJobs > jobs.length && (
+            <p className="text-[11px] text-muted-foreground/60 text-center py-2 px-3">
+              Showing {jobs.length} of {totalJobs} jobs. Refine your search to see different results.
+            </p>
+          )}
         </div>
       </div>
 
