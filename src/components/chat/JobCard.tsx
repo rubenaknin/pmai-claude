@@ -218,12 +218,12 @@ export function JobCard({
           <div className="flex items-center gap-1.5 mt-2.5 flex-nowrap">
             {isApplying ? (
               <button
-                className="group relative overflow-hidden inline-flex items-center justify-center rounded-md text-xs h-7 min-w-[90px] px-3 bg-primary text-primary-foreground shrink-0 cursor-pointer hover:bg-red-500/90 transition-colors"
+                className="group relative overflow-hidden inline-flex items-center justify-center rounded-md text-xs h-7 w-[90px] bg-primary text-primary-foreground shrink-0 cursor-pointer hover:bg-red-500/90 transition-colors"
                 onClick={(e) => { e.stopPropagation(); onCancelApply?.(job.id); }}
               >
                 <span className="absolute inset-y-0 left-0 bg-primary-foreground/15 animate-[progress-fill_20s_ease-out_forwards] group-hover:opacity-0" />
-                <span className="relative z-10 flex items-center gap-1 group-hover:invisible">Applying...</span>
-                <span className="relative z-10 items-center gap-1 absolute inset-0 hidden group-hover:flex group-hover:items-center group-hover:justify-center">
+                <span className="relative z-10 flex items-center gap-1 group-hover:hidden">Applying...</span>
+                <span className="relative z-10 hidden items-center gap-1 group-hover:flex">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                   Stop
                 </span>
@@ -243,15 +243,12 @@ export function JobCard({
                 <JobCardRetryDropdown job={job} onApply={onApply} onSelfApply={onSelfApply} />
               )
             ) : job.status.applied ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-xs h-7 px-2 shrink-0 text-green-600"
-                disabled
+              <span
+                className="inline-flex items-center justify-center h-7 px-2 shrink-0 text-green-600 cursor-default"
                 title={`Applied ${job.status.appliedAt || ""}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-              </Button>
+              </span>
             ) : isSelfApplying ? (
               <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} selfApplying onConfirmSelfApply={onConfirmSelfApply} />
             ) : (
@@ -294,7 +291,7 @@ export function JobCard({
             <Button
               size="sm"
               variant="outline"
-              className={`text-xs h-7 px-2 shrink-0 ${hasEmailGenerated && !job.status.emailSent ? "gap-1" : ""}`}
+              className={`text-xs h-7 px-2 shrink-0 ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (hasEmailGenerated && !job.status.emailSent && onSeeEmail) {

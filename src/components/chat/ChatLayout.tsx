@@ -581,6 +581,56 @@ export function ChatLayout() {
     [addActionMessage]
   );
 
+  const handleGenerateEmailInline = useCallback(
+    async (job: Job) => {
+      const actionMsgId = addActionMessage(`Drafting intro email for ${job.title} at ${job.company}`);
+
+      if (job._apiData?.jobId) {
+        try {
+          const res = await fetch("/api/email/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId: job._apiData.jobId,
+              jobName: job._apiData.jobName || job.title,
+              companyName: job._apiData.companyName || job.company,
+              jobDetails: job._apiData.jobDetails || job.description,
+              url: job._apiData.url,
+              companyUrl: job._apiData.companyUrl,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            const ed: EmailData = {
+              subject: data.subject,
+              body: data.body,
+              recipientName: data.recipientName,
+              recipientTitle: data.recipientTitle,
+              company: job.company,
+            };
+            emailDataCache.current.set(job.id, ed);
+            setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
+            updateActionMessage(actionMsgId, `Drafted intro email for ${job.title} at ${job.company}`);
+            addBotMessage(
+              `I've drafted a personalized intro email for **${job.company}**. Click **See email** on the job card to review and send it.`
+            );
+            // Open sidebar and highlight the card
+            setShowJobPanel(true);
+            setHighlightJobIds(new Set([job.id]));
+            setTimeout(() => setHighlightJobIds(new Set()), 3000);
+          } else {
+            addBotMessage(`Sorry, I couldn't generate the email for **${job.company}**. Try again later.`);
+          }
+        } catch (err) {
+          console.error("Email generation failed:", err);
+          addBotMessage(`Sorry, I couldn't generate the email for **${job.company}**. Try again later.`);
+        }
+      }
+      setSuggestions(["Find more jobs", "Help me prep for interviews"]);
+    },
+    [addActionMessage, updateActionMessage, addBotMessage]
+  );
+
   const handleSeeEmail = useCallback(
     (job: Job) => {
       const cached = emailDataCache.current.get(job.id);
@@ -1218,51 +1268,95 @@ export function ChatLayout() {
 
   // --- Generate intro emails for all ---
   const handleGenerateEmails = useCallback(async () => {
-    const count = jobs.length;
+    const eligibleJobs = jobs.filter((j) => j._apiData?.jobId && !j.status.emailSent);
+    const count = eligibleJobs.length;
+    if (count === 0) {
+      addBotMessage("All jobs already have emails generated or sent.");
+      return;
+    }
+
     setSuggestions([]);
+    setIsProcessing(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const statusMsgId = addActionMessage(`Generating intro emails for ${count} hiring manager${count !== 1 ? "s" : ""}`);
 
-    // Generate email for the first job to show the composer
-    const firstJob = jobs.find((j) => j._apiData?.jobId);
-    if (firstJob) {
-      setEmailJob(firstJob);
-      setEmailData(null);
-      setEmailLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < eligibleJobs.length; i++) {
+      if (controller.signal.aborted) break;
+      const job = eligibleJobs[i];
 
       try {
         const res = await fetch("/api/email/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            jobId: firstJob._apiData!.jobId,
-            jobName: firstJob._apiData!.jobName || firstJob.title,
-            companyName: firstJob._apiData!.companyName || firstJob.company,
-            jobDetails: firstJob._apiData!.jobDetails || firstJob.description,
-            url: firstJob._apiData!.url,
-            companyUrl: firstJob._apiData!.companyUrl,
+            jobId: job._apiData!.jobId,
+            jobName: job._apiData!.jobName || job.title,
+            companyName: job._apiData!.companyName || job.company,
+            jobDetails: job._apiData!.jobDetails || job.description,
+            url: job._apiData!.url,
+            companyUrl: job._apiData!.companyUrl,
           }),
+          signal: controller.signal,
         });
         const data = await res.json();
         if (data.success) {
-          setEmailData({
+          const ed: EmailData = {
             subject: data.subject,
             body: data.body,
             recipientName: data.recipientName,
             recipientTitle: data.recipientTitle,
-            company: firstJob.company,
-          });
+            company: job.company,
+          };
+          emailDataCache.current.set(job.id, ed);
+          setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
+          successCount++;
+          // Delay between requests to avoid rate limiting
+          if (i < eligibleJobs.length - 1) {
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        } else {
+          failCount++;
         }
       } catch (err) {
+        if ((err as Error).name === "AbortError") break;
         console.error("Email generation failed:", err);
+        failCount++;
       }
-      setEmailLoading(false);
     }
 
-    updateActionMessage(statusMsgId, `Generated intro emails for ${count} hiring manager${count !== 1 ? "s" : ""}`);
-    addBotMessage(
-      `I've drafted a personalized intro email for **${firstJob?.company || "the first company"}**. Review and edit it before sending — you'll be able to go through each one.`
-    );
-    setSuggestions(["Looks good, send it", "Find more jobs"]);
+    setIsProcessing(false);
+    abortControllerRef.current = null;
+
+    if (controller.signal.aborted) return;
+
+    if (failCount === 0) {
+      updateActionMessage(statusMsgId, `Generated intro emails for ${successCount} hiring manager${successCount !== 1 ? "s" : ""}`);
+      addBotMessage(
+        `All done! I've drafted personalized intro emails for ${successCount} hiring manager${successCount !== 1 ? "s" : ""}. Click **See email** on any job card to review and send.`,
+        { jobsSnapshot: { jobs: eligibleJobs, totalJobs: eligibleJobs.length } }
+      );
+    } else {
+      updateActionMessage(statusMsgId, `Generated ${successCount} of ${count} emails`);
+      addBotMessage(
+        `Drafted ${successCount} intro email${successCount !== 1 ? "s" : ""}, ${failCount} failed. Click **See email** on any job card to review.`,
+        { jobsSnapshot: { jobs: eligibleJobs.filter(j => emailDataCache.current.has(j.id)), totalJobs: successCount } }
+      );
+    }
+
+    // Open sidebar and highlight email-generated cards
+    setShowJobPanel(true);
+    const generatedIds = eligibleJobs.filter(j => emailDataCache.current.has(j.id)).map(j => j.id);
+    if (generatedIds.length > 0) {
+      setHighlightJobIds(new Set(generatedIds));
+      setTimeout(() => setHighlightJobIds(new Set()), 3000);
+    }
+
+    setSuggestions(["Find more jobs", "Help me prep for interviews"]);
   }, [addBotMessage, addActionMessage, updateActionMessage, jobs]);
 
   // --- Mark all emails as sent (after review) ---
@@ -1379,15 +1473,15 @@ export function ChatLayout() {
 
       // Handle "draft intro email" / "email hiring manager" after single apply
       if (lastAppliedJobRef.current && (lower.includes("yes, draft") || lower.includes("yes, email") || lower.includes("intro email") || lower.includes("hiring manager"))) {
-        const emailJob = lastAppliedJobRef.current;
+        const targetJob = lastAppliedJobRef.current;
         lastAppliedJobRef.current = null;
         setIsTyping(false);
         setChatHistory((prev) => [
           ...prev,
           { role: "user", content },
-          { role: "assistant", content: `[Action: email_hm(${emailJob.title} at ${emailJob.company})]` },
+          { role: "assistant", content: `[Action: email_hm(${targetJob.title} at ${targetJob.company})]` },
         ]);
-        await handleOpenEmail(emailJob);
+        await handleGenerateEmailInline(targetJob);
         return;
       }
       if (lastAppliedJobRef.current && lower.includes("no thanks")) {
@@ -1703,6 +1797,7 @@ export function ChatLayout() {
       handleSave,
       handleViewDetail,
       handleOpenEmail,
+      handleGenerateEmailInline,
       handleRemoveJob,
       handleMatchResumeForSelected,
       handleMatchResumeSingle,
