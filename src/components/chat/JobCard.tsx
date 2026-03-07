@@ -203,10 +203,10 @@ export function JobCard({
           <div className="flex items-center gap-1.5 mt-2.5 flex-nowrap">
             {isApplying ? (
               <button
-                className="group relative overflow-hidden inline-flex items-center justify-center rounded-md text-xs h-7 px-3 bg-primary text-primary-foreground shrink-0 cursor-pointer"
+                className="group relative overflow-hidden inline-flex items-center justify-center rounded-md text-xs h-7 min-w-[90px] px-3 bg-primary text-primary-foreground shrink-0 cursor-pointer hover:bg-red-500/90 transition-colors"
                 onClick={(e) => { e.stopPropagation(); onCancelApply?.(job.id); }}
               >
-                <span className="absolute inset-y-0 left-0 bg-primary-foreground/15 animate-[progress-fill_20s_ease-out_forwards]" />
+                <span className="absolute inset-y-0 left-0 bg-primary-foreground/15 animate-[progress-fill_20s_ease-out_forwards] group-hover:hidden" />
                 <span className="relative z-10 flex items-center gap-1 group-hover:hidden">Applying...</span>
                 <span className="relative z-10 items-center gap-1 hidden group-hover:flex">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
@@ -265,7 +265,7 @@ export function JobCard({
               >
                 {isMatching ? (
                   <>
-                    <span className="absolute inset-y-0 left-0 bg-primary/15 animate-[progress-fill_30s_ease-out_forwards]" />
+                    <span className="absolute inset-y-0 left-0 bg-primary/30 animate-[progress-fill_30s_ease-out_forwards]" />
                     <span className="relative z-10 flex items-center gap-1">Matching...</span>
                   </>
                 ) : job.status.resumeGenerated ? (

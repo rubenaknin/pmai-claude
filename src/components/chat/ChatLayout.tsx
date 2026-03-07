@@ -310,12 +310,23 @@ export function ChatLayout() {
   // --- Action log helper ---
   const addActionMessage = useCallback(
     (content: string) => {
+      const id = `action-${Date.now()}-${Math.random()}`;
       const msg: Message = {
-        id: `action-${Date.now()}-${Math.random()}`,
+        id,
         role: "action",
         content,
       };
       setMessages((prev) => [...prev, msg]);
+      return id;
+    },
+    []
+  );
+
+  const updateActionMessage = useCallback(
+    (id: string, content: string) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, content } : m))
+      );
     },
     []
   );
@@ -337,12 +348,12 @@ export function ChatLayout() {
   );
 
   const handleApplySingle = useCallback(
-    async (jobId: string) => {
+    async (jobId: string, skipResumeCheck?: boolean) => {
       const job = jobs.find((j) => j.id === jobId);
       if (!job || job.status.applied) return;
 
       // If no resume generated yet, ask the user first via a bot message
-      if (!job.status.resumeGenerated) {
+      if (!skipResumeCheck && !job.status.resumeGenerated) {
         // Store the pending job for intent matching
         pendingApplyResumeJobRef.current = job;
         addBotMessage(
@@ -367,7 +378,7 @@ export function ChatLayout() {
 
       // Add to applying set (shows progress animation)
       addApplyingId(jobId);
-      addActionMessage(`Auto-applying to ${job.title} at ${job.company}`);
+      const actionMsgId = addActionMessage(`Auto-applying to ${job.title} at ${job.company}`);
 
       // Create per-job AbortController
       const controller = new AbortController();
@@ -398,6 +409,7 @@ export function ChatLayout() {
             ...j,
             status: { ...j.status, applied: true, appliedAt: "just now" },
           }));
+          updateActionMessage(actionMsgId, `Auto-applied to ${job.title} at ${job.company}`);
           if (data.html) {
             setResumeData({
               html: data.html,
@@ -437,7 +449,7 @@ export function ChatLayout() {
         applyAbortControllers.current.delete(jobId);
       }
     },
-    [jobs, updateJob, addActionMessage, addApplyingId, removeApplyingId, addBotMessage, applyErrorJobIds]
+    [jobs, updateJob, addActionMessage, updateActionMessage, addApplyingId, removeApplyingId, addBotMessage, applyErrorJobIds]
   );
 
   const handleCancelApply = useCallback(
@@ -876,13 +888,35 @@ export function ChatLayout() {
     [handleMatchResume, addBotMessage, addActionMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail, selectedJobIds]
   );
 
-  // --- View existing matched resume for a job ---
+  // --- View existing matched resume for a job (no regeneration) ---
   const handleViewResume = useCallback(
-    (job: Job) => {
-      // Re-trigger match which will fetch the cached resume
-      handleMatchResumeSingle(job);
+    async (job: Job) => {
+      if (!job._apiData?.url || !job._apiData?.jobId) return;
+      addMatchingId(job.id);
+      try {
+        const res = await fetch("/api/resume/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: job._apiData.url,
+            jobId: job._apiData.jobId,
+            jobName: job._apiData.jobName || job.title,
+            companyName: job._apiData.companyName || job.company,
+            jobDetails: job._apiData.jobDetails || job.description,
+            location: job._apiData.location || job.location,
+          }),
+        });
+        const data = await res.json();
+        if (data.html) {
+          handlePreviewEditResume(data.html);
+        }
+      } catch (err) {
+        console.error("View resume failed:", err);
+      } finally {
+        removeMatchingId(job.id);
+      }
     },
-    [handleMatchResumeSingle]
+    [addMatchingId, removeMatchingId, handlePreviewEditResume]
   );
 
   // --- Match resume for all selected jobs ---
@@ -947,57 +981,101 @@ export function ChatLayout() {
 
   const executeApplyAll = useCallback(async (targetJobs: Job[]) => {
     const count = targetJobs.length;
-    const targetIds = new Set(targetJobs.map((j) => j.id));
-
-    setJobs((prev) =>
-      prev.map((j) =>
-        targetIds.has(j.id)
-          ? { ...j, status: { ...j.status, applied: true, appliedAt: "just now" } }
-          : j
-      )
-    );
     setSuggestions([]);
 
-    addBotMessage(
-      `Applying to ${count} job${count !== 1 ? "s" : ""}...`
-    );
+    // Show animated "Applying to X jobs..." message
+    const statusMsgId = addActionMessage(`Applying to ${count} job${count !== 1 ? "s" : ""}`);
 
-    // Fire bulk resume generation in background for the first job
-    const firstJob = targetJobs[0];
-    if (firstJob?._apiData?.url && firstJob?._apiData?.jobId) {
-      try {
-        const res = await fetch("/api/resume/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: firstJob._apiData.url,
-            jobId: firstJob._apiData.jobId,
-            jobName: firstJob._apiData.jobName || firstJob.title,
-            companyName: firstJob._apiData.companyName || firstJob.company,
-            jobDetails: firstJob._apiData.jobDetails || firstJob.description,
-            location: firstJob._apiData.location || firstJob.location,
-          }),
-        });
-        const data = await res.json();
-        if (data.html) {
-          setResumeData({
-            html: data.html,
-            highlights: [],
-            pdfFileName: data.pdfFileName,
-            jobTitle: firstJob.title,
-            company: firstJob.company,
-            threeExplanations: data.threeExplanations,
+    // Add all jobs to applying set for progress animation on cards
+    for (const job of targetJobs) {
+      addApplyingId(job.id);
+      const controller = new AbortController();
+      applyAbortControllers.current.set(job.id, controller);
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Process each job sequentially
+    for (let i = 0; i < targetJobs.length; i++) {
+      const job = targetJobs[i];
+      const controller = applyAbortControllers.current.get(job.id);
+
+      if (job._apiData?.url && job._apiData?.jobId) {
+        try {
+          const res = await fetch("/api/resume/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: job._apiData.url,
+              jobId: job._apiData.jobId,
+              jobName: job._apiData.jobName || job.title,
+              companyName: job._apiData.companyName || job.company,
+              jobDetails: job._apiData.jobDetails || job.description,
+              location: job._apiData.location || job.location,
+            }),
+            signal: controller?.signal,
           });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || `API error ${res.status}`);
+
+          updateJob(job.id, (j) => ({
+            ...j,
+            status: { ...j.status, applied: true, appliedAt: "just now" },
+          }));
+          if (data.html) {
+            if (i === 0) {
+              setResumeData({
+                html: data.html,
+                highlights: [],
+                pdfFileName: data.pdfFileName,
+                jobTitle: job.title,
+                company: job.company,
+                threeExplanations: data.threeExplanations,
+              });
+            }
+            updateJob(job.id, (j) => ({
+              ...j,
+              status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
+            }));
+          }
+          successCount++;
+        } catch (err) {
+          if ((err as Error).name === "AbortError") {
+            break;
+          }
+          console.error(`Bulk apply failed for ${job.company}:`, err);
+          setApplyErrorJobIds((prev) => new Set(prev).add(job.id));
+          failCount++;
         }
-      } catch (err) {
-        console.error("Bulk resume generation failed:", err);
+      } else {
+        // No API data — mark as applied immediately
+        updateJob(job.id, (j) => ({
+          ...j,
+          status: { ...j.status, applied: true, appliedAt: "just now" },
+        }));
+        successCount++;
+      }
+
+      // Remove from applying set + cleanup controller
+      removeApplyingId(job.id);
+      applyAbortControllers.current.delete(job.id);
+
+      // Add small delay between jobs to avoid rate limiting
+      if (i < targetJobs.length - 1) {
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
+    // Update status message
+    updateActionMessage(statusMsgId, `Applied to ${successCount} of ${count} job${count !== 1 ? "s" : ""}`);
+
     addBotMessage(
-      `All done! I've submitted ${count} tailored applications.`,
+      failCount === 0
+        ? `All done! I've submitted ${successCount} tailored applications.`
+        : `Finished: ${successCount} applied successfully, ${failCount} failed. You can retry the failed ones individually.`,
       {
-        customComponent: <ApplicationStatusCard jobCount={count} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
+        customComponent: <ApplicationStatusCard jobCount={successCount} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
       }
     );
     addBotMessage(
@@ -1007,7 +1085,7 @@ export function ChatLayout() {
       "Yes, generate emails for me",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage, handleLoadJobsSnapshot]);
+  }, [addBotMessage, addActionMessage, updateActionMessage, addApplyingId, removeApplyingId, updateJob, handleLoadJobsSnapshot]);
 
   const handleApplyAll = useCallback(async () => {
     // If jobs are selected, apply only to those; otherwise apply to all
@@ -1139,11 +1217,10 @@ export function ChatLayout() {
             { role: "user", content },
             { role: "assistant", content: `[Action: match_resume(${pendingJob.title} at ${pendingJob.company}) then auto-apply]` },
           ]);
-          addBotMessage(`Generating a tailored resume for **${pendingJob.title}** at **${pendingJob.company}**, then I'll auto-apply...`);
+          addBotMessage(`Generating a tailored resume for ${pendingJob.title} at ${pendingJob.company}, then I'll auto-apply...`);
           const result = await handleMatchResumeSingle(pendingJob);
           if (result.success) {
-            // Now apply (job now has resumeGenerated=true)
-            handleApplySingle(pendingJob.id);
+            handleApplySingle(pendingJob.id, true);
           }
           return;
         } else {
@@ -1153,13 +1230,7 @@ export function ChatLayout() {
             { role: "user", content },
             { role: "assistant", content: `[Action: auto-apply(${pendingJob.title} at ${pendingJob.company}, no tailor)]` },
           ]);
-          // Force apply (skip the resume check by updating status first)
-          updateJob(pendingJob.id, (j) => ({
-            ...j,
-            status: { ...j.status, resumeGenerated: true },
-          }));
-          // Small delay to let state update flush
-          setTimeout(() => handleApplySingle(pendingJob.id), 50);
+          handleApplySingle(pendingJob.id, true);
           return;
         }
       }

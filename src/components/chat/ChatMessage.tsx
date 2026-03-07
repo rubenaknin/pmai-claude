@@ -1,12 +1,47 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { TypingIndicator } from "./TypingIndicator";
 import { NetworkDebugPanel } from "./NetworkDebugPanel";
 import type { Job } from "./jobData";
 import type { DebugInfo } from "@/lib/types";
+
+/** Animated dots that cycle: . → .. → ... */
+function AnimatedDots() {
+  const [count, setCount] = useState(1);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCount((c) => (c % 3) + 1);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+  return <span className="inline-block w-[1em] text-left">{".".repeat(count)}</span>;
+}
+
+/** Render inline **bold** markdown as <strong> elements */
+function renderInlineBold(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <strong key={match.index} className="font-semibold">
+        {match[1]}
+      </strong>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
+}
 
 export type MessageRole = "bot" | "user" | "action";
 
@@ -28,10 +63,12 @@ interface ChatMessageProps {
 export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
   // Action log messages — subtle centered line
   if (message.role === "action") {
+    // Show animated dots for in-progress actions (present participle verbs)
+    const isInProgress = /\b(Applying|Auto-applying|Matching|Drafting|Sending|Generating)\b/.test(message.content);
     return (
       <div className="flex justify-center py-0.5">
         <span className="text-[11px] italic text-muted-foreground/60">
-          {message.content}
+          {message.content}{isInProgress && <AnimatedDots />}
         </span>
       </div>
     );
@@ -63,7 +100,7 @@ export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
                 : "bg-primary text-primary-foreground rounded-tr-sm"
             }`}
           >
-            {message.isTyping ? <TypingIndicator /> : message.content}
+            {message.isTyping ? <TypingIndicator /> : renderInlineBold(message.content)}
           </div>
         )}
         {message.customComponent}
