@@ -46,17 +46,31 @@ export function ApplicationStatusCard({
             </div>
           )}
           {/* 2) Applications Submitted */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
-              <span className="text-sm truncate">
-                {displaySuccess} Application{displaySuccess !== 1 ? "s" : ""} Submitted
-              </span>
+          {displaySuccess > 0 ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                <span className="text-sm truncate">
+                  {displaySuccess} Application{displaySuccess !== 1 ? "s" : ""} Submitted
+                </span>
+              </div>
+              <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs shrink-0">
+                Done
+              </Badge>
             </div>
-            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs shrink-0">
-              Done
-            </Badge>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-muted-foreground/50 shrink-0" />
+                <span className="text-sm text-muted-foreground truncate">
+                  Auto-Apply
+                </span>
+              </div>
+              <Badge variant="outline" className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
+                Not Done Yet
+              </Badge>
+            </div>
+          )}
           {/* 3) Failed (conditional) */}
           {displayFail > 0 && (
             <div className="flex items-center justify-between gap-3">
