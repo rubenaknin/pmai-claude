@@ -243,15 +243,7 @@ export function JobCard({
                   Apply manually
                 </Button>
               ) : (
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="text-xs h-7 shrink-0"
-                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
-                  Auto-apply
-                </Button>
+                <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} onSelfApply={onSelfApply} retryMode />
               )
             ) : job.status.applied ? (
               <span
@@ -302,7 +294,7 @@ export function JobCard({
             <Button
               size="sm"
               variant="outline"
-              className={`text-xs h-7 shrink-0 ${isEmailGenerating ? "relative overflow-hidden" : ""} ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
+              className={`text-xs h-7 shrink-0 ${isEmailGenerating ? "relative overflow-hidden" : ""} ${hasEmailGenerated && !job.status.emailSent ? "gap-1 border-primary/40 text-primary" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (isEmailGenerating) return;
@@ -349,7 +341,7 @@ export function JobCard({
 }
 
 
-function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply, onConfirmSelfApply }: { job: Job; onApply: (jobId: string) => void; compact?: boolean; selfApplying?: boolean; onSelfApply?: (jobId: string) => void; onConfirmSelfApply?: (jobId: string) => void }) {
+function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply, onConfirmSelfApply, retryMode }: { job: Job; onApply: (jobId: string) => void; compact?: boolean; selfApplying?: boolean; onSelfApply?: (jobId: string) => void; onConfirmSelfApply?: (jobId: string) => void; retryMode?: boolean }) {
   const [open, setOpen] = useState(false);
 
   if (selfApplying) {
@@ -368,8 +360,8 @@ function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply
           <PopoverTrigger asChild>
             <Button
               size="sm"
-              variant="secondary"
-              className="text-xs h-7 px-1.5 rounded-l-none border-l border-border/50"
+              variant="default"
+              className="text-xs h-7 px-1.5 rounded-l-none border-l border-primary-foreground/20"
               onClick={(e) => e.stopPropagation()}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
@@ -394,7 +386,7 @@ function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply
     );
   }
 
-  // Default state: "Auto-apply" main button + dropdown with Apply by myself
+  // Default/retry state: "Auto-apply" main button + dropdown with Apply by myself
   return (
     <div className="flex items-center gap-0 shrink-0">
       <Button
@@ -403,6 +395,9 @@ function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply
         className="text-xs h-7 rounded-r-none"
         onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
       >
+        {retryMode && (
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+        )}
         Auto-apply
       </Button>
       <Popover open={open} onOpenChange={setOpen}>

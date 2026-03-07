@@ -114,16 +114,16 @@ export function ChatInput({
 
         return [
           {
-            text: `Generate resume for the ${selectedJobs.length} selected`,
-            primary: noResume && !allResumed,
+            text: `Apply to the ${selectedJobs.length} selected`,
+            primary: true,
           },
           {
-            text: `Apply to the ${selectedJobs.length} selected`,
-            primary: allResumed && notAllApplied,
+            text: `Generate resume for the ${selectedJobs.length} selected`,
+            primary: false,
           },
           {
             text: `Generate intro emails for the ${selectedJobs.length} selected`,
-            primary: allApplied,
+            primary: false,
           },
         ];
       })()

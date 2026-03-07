@@ -475,10 +475,15 @@ export function ChatLayout() {
             addBotMessage(
               `Applied to **${job.title}** at **${job.company}**! Want me to draft an intro email to the hiring manager? It'll help you stand out.`
             );
-            setSuggestions([
+            const unappliedCount = jobs.filter((j) => !j.status.applied && j.id !== jobId).length;
+            const suggestionList = [
               `Yes, draft intro email`,
               "No thanks",
-            ]);
+            ];
+            if (unappliedCount > 0) {
+              suggestionList.push("Select more jobs to apply to");
+            }
+            setSuggestions(suggestionList);
           }
         } catch (err) {
           if ((err as Error).name === "AbortError") {
@@ -524,6 +529,12 @@ export function ChatLayout() {
     (jobId: string) => {
       const job = jobs.find((j) => j.id === jobId);
       setSelfApplyJobIds((prev) => new Set(prev).add(jobId));
+      // Clear error state so the "I applied" button shows instead of retry
+      setApplyErrorJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
       if (job?._apiData?.url) {
         window.open(job._apiData.url, "_blank");
       }
@@ -533,6 +544,7 @@ export function ChatLayout() {
 
   const handleConfirmSelfApply = useCallback(
     (jobId: string) => {
+      const job = jobs.find((j) => j.id === jobId);
       updateJob(jobId, (j) => ({
         ...j,
         status: { ...j.status, applied: true, appliedAt: new Date().toLocaleString() },
@@ -542,8 +554,27 @@ export function ChatLayout() {
         next.delete(jobId);
         return next;
       });
+      // Highlight the card
+      setHighlightJobIds(new Set([jobId]));
+      setTimeout(() => setHighlightJobIds(new Set()), 2000);
+      // Offer intro email (same flow as auto-apply success)
+      if (job && !job.status.emailSent) {
+        lastAppliedJobRef.current = job;
+        addBotMessage(
+          `Great, marked **${job.title}** at **${job.company}** as applied! Want me to draft an intro email to the hiring manager?`
+        );
+        const unappliedCount = jobs.filter((j) => !j.status.applied && j.id !== jobId).length;
+        const suggestionList = [
+          `Yes, draft intro email`,
+          "No thanks",
+        ];
+        if (unappliedCount > 0) {
+          suggestionList.push("Select more jobs to apply to");
+        }
+        setSuggestions(suggestionList);
+      }
     },
-    [updateJob]
+    [updateJob, jobs, addBotMessage]
   );
 
   const handleSave = useCallback(
@@ -608,6 +639,9 @@ export function ChatLayout() {
             setEmailData(ed);
             emailDataCache.current.set(job.id, ed);
             setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
+            // Highlight the card
+            setHighlightJobIds(new Set([job.id]));
+            setTimeout(() => setHighlightJobIds(new Set()), 2000);
           }
         } catch (err) {
           console.error("Email generation failed:", err);
@@ -1296,9 +1330,14 @@ export function ChatLayout() {
     await executeApplyAll(targetJobs);
   }, [jobs, selectedJobIds, clearSelection, addBotMessage, executeApplyAll]);
 
-  // --- Generate intro emails for all ---
+  // --- Generate intro emails for all (or selected) ---
   const handleGenerateEmails = useCallback(async () => {
-    const eligibleJobs = jobs.filter((j) => j._apiData?.jobId && !j.status.emailSent);
+    // If jobs are selected, only generate for selected; otherwise all
+    const pool = selectedJobIds.size > 0
+      ? jobs.filter((j) => selectedJobIds.has(j.id))
+      : jobs;
+    if (selectedJobIds.size > 0) clearSelection();
+    const eligibleJobs = pool.filter((j) => j._apiData?.jobId && !j.status.emailSent);
     const count = eligibleJobs.length;
     if (count === 0) {
       addBotMessage("All jobs already have emails generated or sent.");
@@ -1395,7 +1434,7 @@ export function ChatLayout() {
     }
 
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
-  }, [addBotMessage, addActionMessage, updateActionMessage, addEmailGeneratingId, removeEmailGeneratingId, jobs]);
+  }, [addBotMessage, addActionMessage, updateActionMessage, addEmailGeneratingId, removeEmailGeneratingId, jobs, selectedJobIds, clearSelection]);
 
   // --- Mark all emails as sent (after review) ---
   const handleEmailAll = useCallback(async () => {
@@ -1533,6 +1572,13 @@ export function ChatLayout() {
         setSuggestions(["Find more jobs", "Help me prep for interviews"]);
         return;
       }
+      if (lastAppliedJobRef.current && lower.includes("select more jobs")) {
+        lastAppliedJobRef.current = null;
+        setIsTyping(false);
+        setShowJobPanel(true);
+        addBotMessage("Select the jobs you'd like to apply to from the panel on the right, then click **Apply to the selected**.");
+        return;
+      }
       lastAppliedJobRef.current = null; // Clear if any other message
 
       // Handle pending bulk apply tailor question
@@ -1580,26 +1626,12 @@ export function ChatLayout() {
       if (lower.includes("email hms for selected") || lower.includes("email hiring managers for selected") || lower.includes("generate intro emails for the")) {
         if (selectedJobs.length > 0) {
           setIsTyping(false);
-          const count = selectedJobs.length;
-          setJobs((prev) =>
-            prev.map((j) =>
-              selectedJobIds.has(j.id)
-                ? { ...j, status: { ...j.status, emailSent: true, emailSentAt: "just now" } }
-                : j
-            )
-          );
-          clearSelection();
-          addBotMessage(`Sending personalized emails to hiring managers at ${count} selected companies...`);
-          addBotMessage(
-            "Done! I've sent a tailored email to each hiring manager.",
-            { customComponentMeta: { type: "applicationStatusCard", jobIds: selectedJobs.map(j => j.id), totalJobs: count } }
-          );
           setChatHistory((prev) => [
             ...prev,
             { role: "user", content },
-            { role: "assistant", content: `[Action: bulk_email(${count} selected jobs)]` },
+            { role: "assistant", content: `[Action: generate_emails(${selectedJobs.length} selected jobs)]` },
           ]);
-          setSuggestions(["Find more jobs", "Help me prep for interviews"]);
+          await handleGenerateEmails();
           return;
         }
       }
@@ -1698,7 +1730,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = Math.max(data.data.totalJobs || 0, incomingJobs.length);
+              const incomingTotal = incomingJobs.length;
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
@@ -1895,7 +1927,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = Math.max(data.data.totalJobs || 0, incomingJobs.length);
+              const incomingTotal = incomingJobs.length;
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
@@ -1904,16 +1936,16 @@ export function ChatLayout() {
 
               if (incomingJobs.length <= 5) {
                 addBotMessage(
-                  `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`,
+                  `I found ${incomingJobs.length} matching job${incomingJobs.length !== 1 ? "s" : ""} for you. Here are the top results:`,
                   {
                     jobsSnapshot: snapshot,
-                    customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingTotal },
+                    customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingJobs.length },
                   },
                   debugInfo
                 );
               } else {
                 addBotMessage(
-                  `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`,
+                  `I found ${incomingJobs.length} matching jobs for you. Browse them in the panel on the right.`,
                   { jobsSnapshot: snapshot },
                   debugInfo
                 );
