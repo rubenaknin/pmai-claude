@@ -69,36 +69,25 @@ export function ApplicationStatusCard({
           )}
           {/* 4) Email section */}
           {emailsSent ? (
-            <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
-                  <span className="text-sm">Emails Sent to Hiring Managers</span>
-                </div>
-                <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
-                  Sent
-                </Badge>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-sm">Intro Emails Sent</span>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-yellow-500" />
-                  <span className="text-sm">Awaiting Responses</span>
-                </div>
-                <Badge variant="outline" className="text-xs">
-                  Pending
-                </Badge>
-              </div>
-            </>
+              <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
+                Sent
+              </Badge>
+            </div>
           ) : (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-muted-foreground/50" />
                 <span className="text-sm text-muted-foreground">
-                  Email Hiring Managers
+                  Intro Emails to Hiring Managers
                 </span>
               </div>
-              <Badge variant="outline" className="text-xs">
-                Pending
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                Not Done Yet
               </Badge>
             </div>
           )}

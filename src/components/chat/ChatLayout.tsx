@@ -428,14 +428,14 @@ export function ChatLayout() {
               status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
             }));
           }
-          // Offer to email the hiring manager
+          // Offer to generate intro email to hiring manager
           if (!job.status.emailSent) {
             lastAppliedJobRef.current = job;
             addBotMessage(
-              `Applied to **${job.title}** at **${job.company}**! Would you like me to send a personalized email to the hiring manager?`
+              `Applied to **${job.title}** at **${job.company}**! Want me to draft an intro email to the hiring manager? It'll help you stand out.`
             );
             setSuggestions([
-              `Yes, email ${job.company}'s hiring manager`,
+              `Yes, draft intro email`,
               "No thanks",
             ]);
           }
@@ -1102,11 +1102,11 @@ export function ChatLayout() {
       }
     );
     addBotMessage(
-      "Would you like me to generate personalized emails to the hiring managers? You can review and edit them before sending."
+      "Want me to generate personalized intro emails to the hiring managers? Candidates who reach out directly are 3x more likely to hear back."
     );
     setSuggestions([
-      "Yes, generate emails for me",
-      "No thanks, just the applications",
+      "Yes, generate intro emails",
+      "No thanks",
     ]);
   }, [addBotMessage, addActionMessage, updateActionMessage, addApplyingId, removeApplyingId, updateJob, handleLoadJobsSnapshot]);
 
@@ -1141,7 +1141,56 @@ export function ChatLayout() {
     await executeApplyAll(targetJobs);
   }, [jobs, selectedJobIds, clearSelection, addBotMessage, executeApplyAll]);
 
-  // --- Email all ---
+  // --- Generate intro emails for all ---
+  const handleGenerateEmails = useCallback(async () => {
+    const count = jobs.length;
+    setSuggestions([]);
+    const statusMsgId = addActionMessage(`Generating intro emails for ${count} hiring manager${count !== 1 ? "s" : ""}`);
+
+    // Generate email for the first job to show the composer
+    const firstJob = jobs.find((j) => j._apiData?.jobId);
+    if (firstJob) {
+      setEmailJob(firstJob);
+      setEmailData(null);
+      setEmailLoading(true);
+
+      try {
+        const res = await fetch("/api/email/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: firstJob._apiData!.jobId,
+            jobName: firstJob._apiData!.jobName || firstJob.title,
+            companyName: firstJob._apiData!.companyName || firstJob.company,
+            jobDetails: firstJob._apiData!.jobDetails || firstJob.description,
+            url: firstJob._apiData!.url,
+            companyUrl: firstJob._apiData!.companyUrl,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setEmailData({
+            subject: data.subject,
+            body: data.body,
+            recipientName: data.recipientName,
+            recipientTitle: data.recipientTitle,
+            company: firstJob.company,
+          });
+        }
+      } catch (err) {
+        console.error("Email generation failed:", err);
+      }
+      setEmailLoading(false);
+    }
+
+    updateActionMessage(statusMsgId, `Generated intro emails for ${count} hiring manager${count !== 1 ? "s" : ""}`);
+    addBotMessage(
+      `I've drafted a personalized intro email for **${firstJob?.company || "the first company"}**. Review and edit it before sending — you'll be able to go through each one.`
+    );
+    setSuggestions(["Looks good, send it", "Find more jobs"]);
+  }, [addBotMessage, addActionMessage, updateActionMessage, jobs]);
+
+  // --- Mark all emails as sent (after review) ---
   const handleEmailAll = useCallback(async () => {
     const count = jobs.length;
     const snapshot = [...jobs];
@@ -1153,10 +1202,7 @@ export function ChatLayout() {
     );
     setSuggestions([]);
     addBotMessage(
-      `Sending personalized emails to hiring managers at all ${count} companies...`
-    );
-    addBotMessage(
-      "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
+      "Done! I've sent a tailored intro email to each hiring manager.",
       {
         customComponent: (
           <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: snapshot, totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />
@@ -1164,7 +1210,7 @@ export function ChatLayout() {
       }
     );
     addBotMessage(
-      "I'll notify you as soon as any hiring manager responds. Anything else I can help with?"
+      "Anything else I can help with?"
     );
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
   }, [addBotMessage, jobs, handleLoadJobsSnapshot]);
@@ -1258,8 +1304,8 @@ export function ChatLayout() {
         }
       }
 
-      // Handle "email X's hiring manager" after single apply
-      if (lastAppliedJobRef.current && (lower.includes("yes, email") || lower.includes("hiring manager"))) {
+      // Handle "draft intro email" / "email hiring manager" after single apply
+      if (lastAppliedJobRef.current && (lower.includes("yes, draft") || lower.includes("yes, email") || lower.includes("intro email") || lower.includes("hiring manager"))) {
         const emailJob = lastAppliedJobRef.current;
         lastAppliedJobRef.current = null;
         setIsTyping(false);
@@ -1334,7 +1380,7 @@ export function ChatLayout() {
             { role: "user", content },
             { role: "assistant", content: `[Action: bulk_apply(${targetJobs.length} selected jobs)]` },
           ]);
-          setSuggestions(["Yes, email all hiring managers", "Find more jobs"]);
+          setSuggestions(["Yes, generate intro emails", "Find more jobs"]);
           return;
         }
       }
@@ -1393,22 +1439,26 @@ export function ChatLayout() {
         return;
       }
       if (
+        lower.includes("generate intro email") ||
         lower.includes("generate email") ||
-        lower.includes("yes, generate email")
+        lower.includes("yes, generate email") ||
+        lower.includes("yes, generate intro")
       ) {
         setIsTyping(false);
         setChatHistory((prev) => [
           ...prev,
           { role: "user", content },
-          { role: "assistant", content: `[Action: bulk_email(${jobs.length} jobs)]` },
+          { role: "assistant", content: `[Action: generate_emails(${jobs.length} jobs)]` },
         ]);
-        await handleEmailAll();
+        await handleGenerateEmails();
         return;
       }
       if (
         lower.includes("email all hiring") ||
         lower.includes("yes, email all") ||
-        lower.includes("email all")
+        lower.includes("email all") ||
+        lower.includes("send it") ||
+        lower.includes("looks good, send")
       ) {
         setIsTyping(false);
         setChatHistory((prev) => [
@@ -1591,6 +1641,7 @@ export function ChatLayout() {
       handleApplyAll,
       executeApplyAll,
       handleEmailAll,
+      handleGenerateEmails,
       handleApplySingle,
       handleCancelApply,
       handleSave,

@@ -32,7 +32,7 @@ RULES for the "search" parameter:
         location: {
           type: "string",
           description:
-            "Location filter (e.g. 'New York', 'Remote', 'Tel Aviv'). Omit to use the user's profile location.",
+            "Location filter — must be ONLY a city, region, or country name (e.g. 'New York', 'Remote', 'Tel Aviv', 'London'). Do NOT include industry, company type, or domain qualifiers in this field. For example, if the user says 'cybersecurity companies in Tel Aviv', location should be 'Tel Aviv' — NOT 'Cybersecurity Companies In Tel Aviv'.",
         },
         filter_keywords: {
           type: "array",
