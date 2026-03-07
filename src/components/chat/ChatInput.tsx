@@ -189,10 +189,10 @@ export function ChatInput({
                 key={text}
                 onClick={() => handleSuggestionClick(text)}
                 disabled={disabled}
-                className={`rounded-full px-3 py-1.5 text-xs transition-colors disabled:opacity-50 ${
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
                   isPrimary
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "border border-border text-foreground/70 hover:bg-muted hover:text-foreground"
                 }`}
               >
                 {text}

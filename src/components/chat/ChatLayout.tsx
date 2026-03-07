@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -149,8 +149,11 @@ export function ChatLayout() {
   const [applyErrorJobIds, setApplyErrorJobIds] = useState<Set<string>>(new Set());
   const [applyingJobIds, setApplyingJobIds] = useState<Set<string>>(new Set());
   const [applyRetriedJobIds, setApplyRetriedJobIds] = useState<Set<string>>(new Set());
+  const [selfApplyJobIds, setSelfApplyJobIds] = useState<Set<string>>(new Set());
+  const [emailGeneratedJobIds, setEmailGeneratedJobIds] = useState<Set<string>>(new Set());
   const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
   const resumeHtmlCache = useRef<Map<string, string>>(new Map());
+  const emailDataCache = useRef<Map<string, EmailData>>(new Map());
 
   const addApplyingId = useCallback((id: string) => {
     setApplyingJobIds((prev) => new Set(prev).add(id));
@@ -478,6 +481,32 @@ export function ChatLayout() {
     [removeApplyingId]
   );
 
+  const handleSelfApply = useCallback(
+    (jobId: string) => {
+      const job = jobs.find((j) => j.id === jobId);
+      setSelfApplyJobIds((prev) => new Set(prev).add(jobId));
+      if (job?._apiData?.url) {
+        window.open(job._apiData.url, "_blank");
+      }
+    },
+    [jobs]
+  );
+
+  const handleConfirmSelfApply = useCallback(
+    (jobId: string) => {
+      updateJob(jobId, (j) => ({
+        ...j,
+        status: { ...j.status, applied: true, appliedAt: new Date().toLocaleString() },
+      }));
+      setSelfApplyJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    },
+    [updateJob]
+  );
+
   const handleSave = useCallback(
     (jobId: string) => {
       updateJob(jobId, (j) => ({
@@ -530,13 +559,16 @@ export function ChatLayout() {
           });
           const data = await res.json();
           if (data.success) {
-            setEmailData({
+            const ed: EmailData = {
               subject: data.subject,
               body: data.body,
               recipientName: data.recipientName,
               recipientTitle: data.recipientTitle,
               company: job.company,
-            });
+            };
+            setEmailData(ed);
+            emailDataCache.current.set(job.id, ed);
+            setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
           }
         } catch (err) {
           console.error("Email generation failed:", err);
@@ -545,6 +577,20 @@ export function ChatLayout() {
       setEmailLoading(false);
     },
     [addActionMessage]
+  );
+
+  const handleSeeEmail = useCallback(
+    (job: Job) => {
+      const cached = emailDataCache.current.get(job.id);
+      if (cached) {
+        setEmailJob(job);
+        setEmailData(cached);
+        setEmailLoading(false);
+      } else {
+        handleOpenEmail(job);
+      }
+    },
+    [handleOpenEmail]
   );
 
   const handleRemoveJob = useCallback(
@@ -1098,7 +1144,7 @@ export function ChatLayout() {
         ? `All done! I've submitted ${successCount} tailored applications.`
         : `Finished: ${successCount} applied successfully, ${failCount} failed. You can retry the failed ones individually.`,
       {
-        customComponent: <ApplicationStatusCard jobCount={successCount} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
+        customComponentMeta: { type: "applicationStatusCard", jobIds: targetJobs.map(j => j.id), totalJobs: count },
       }
     );
     addBotMessage(
@@ -1108,7 +1154,7 @@ export function ChatLayout() {
       "Yes, generate intro emails",
       "No thanks",
     ]);
-  }, [addBotMessage, addActionMessage, updateActionMessage, addApplyingId, removeApplyingId, updateJob, handleLoadJobsSnapshot]);
+  }, [addBotMessage, addActionMessage, updateActionMessage, addApplyingId, removeApplyingId, updateJob]);
 
   const handleApplyAll = useCallback(async () => {
     // If jobs are selected, apply only to those; otherwise apply to all
@@ -1204,16 +1250,14 @@ export function ChatLayout() {
     addBotMessage(
       "Done! I've sent a tailored intro email to each hiring manager.",
       {
-        customComponent: (
-          <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: snapshot, totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />
-        ),
+        customComponentMeta: { type: "applicationStatusCard", jobIds: snapshot.map(j => j.id), totalJobs: count },
       }
     );
     addBotMessage(
       "Anything else I can help with?"
     );
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
-  }, [addBotMessage, jobs, handleLoadJobsSnapshot]);
+  }, [addBotMessage, jobs]);
 
   // --- Main message handler (API-driven) ---
   const handleUserMessage = useCallback(
@@ -1373,7 +1417,7 @@ export function ChatLayout() {
           );
           addBotMessage(
             `Done! I've submitted ${targetJobs.length} tailored applications.`,
-            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: targetJobs.length }} onLoadJobsSnapshot={handleLoadJobsSnapshot} /> }
+            { customComponentMeta: { type: "applicationStatusCard", jobIds: targetJobs.map(j => j.id), totalJobs: targetJobs.length } }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -1399,7 +1443,7 @@ export function ChatLayout() {
           addBotMessage(`Sending personalized emails to hiring managers at ${count} selected companies...`);
           addBotMessage(
             "Done! I've sent a tailored email to each hiring manager.",
-            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: [...selectedJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} /> }
+            { customComponentMeta: { type: "applicationStatusCard", jobIds: selectedJobs.map(j => j.id), totalJobs: count } }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -1517,22 +1561,7 @@ export function ChatLayout() {
                 const shortMsg = `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`;
                 addBotMessage(shortMsg, {
                   jobsSnapshot: snapshot,
-                  customComponent: (
-                    <ChatJobCards
-                      jobs={incomingJobs}
-                      totalJobs={incomingTotal}
-                      onApply={handleApplySingle}
-                      onEmailHM={handleOpenEmail}
-                      onViewDetail={handleViewDetail}
-                      onMatchResume={handleMatchResumeSingle}
-                      onViewResume={handleViewResume}
-                      matchingJobIds={matchingJobIds}
-                      applyErrorJobIds={applyErrorJobIds}
-                      applyingJobIds={applyingJobIds}
-                      applyRetriedJobIds={applyRetriedJobIds}
-                      onCancelApply={handleCancelApply}
-                    />
-                  ),
+                  customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingTotal },
                 }, debugInfo);
               } else {
                 // >5 jobs: short text only, jobs visible in right panel
@@ -1590,7 +1619,7 @@ export function ChatLayout() {
                 }))
               );
               addBotMessage(data.botMessage, {
-                customComponent: <ApplicationStatusCard jobCount={count} jobsSnapshot={{ jobs: [...jobs], totalJobs }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
+                customComponentMeta: { type: "applicationStatusCard", jobIds: jobs.map(j => j.id), totalJobs },
               }, debugInfo);
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
@@ -1607,9 +1636,7 @@ export function ChatLayout() {
                 }))
               );
               addBotMessage(data.botMessage, {
-                customComponent: (
-                  <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: [...jobs], totalJobs }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />
-                ),
+                customComponentMeta: { type: "applicationStatusCard", jobIds: jobs.map(j => j.id), totalJobs },
               }, debugInfo);
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
@@ -1654,9 +1681,8 @@ export function ChatLayout() {
       selectedJobs,
       selectedJobIds,
       clearSelection,
-      applyingJobIds,
-      matchingJobIds,
       updateJob,
+      jobs,
     ]
   );
 
@@ -1731,22 +1757,7 @@ export function ChatLayout() {
                   `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`,
                   {
                     jobsSnapshot: snapshot,
-                    customComponent: (
-                      <ChatJobCards
-                        jobs={incomingJobs}
-                        totalJobs={incomingTotal}
-                        onApply={handleApplySingle}
-                        onEmailHM={handleOpenEmail}
-                        onViewDetail={handleViewDetail}
-                        onMatchResume={handleMatchResumeSingle}
-                        onViewResume={handleViewResume}
-                        matchingJobIds={matchingJobIds}
-                        applyErrorJobIds={applyErrorJobIds}
-                        applyingJobIds={applyingJobIds}
-                        applyRetriedJobIds={applyRetriedJobIds}
-                        onCancelApply={handleCancelApply}
-                      />
-                    ),
+                    customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingTotal },
                   },
                   debugInfo
                 );
@@ -1779,6 +1790,52 @@ export function ChatLayout() {
     fireInitialQuery();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuery, userStatus]);
+
+  // --- Render live component from metadata using current state ---
+  const renderLiveComponent = useCallback(
+    (meta: NonNullable<Message["customComponentMeta"]>): React.ReactNode => {
+      if (meta.type === "chatJobCards") {
+        const liveJobs = meta.jobIds.map(id => jobs.find(j => j.id === id)).filter(Boolean) as Job[];
+        return (
+          <ChatJobCards
+            jobs={liveJobs}
+            totalJobs={meta.totalJobs}
+            onApply={handleApplySingle}
+            onEmailHM={handleOpenEmail}
+            onViewDetail={handleViewDetail}
+            onMatchResume={handleMatchResumeSingle}
+            onViewResume={handleViewResume}
+            matchingJobIds={matchingJobIds}
+            applyErrorJobIds={applyErrorJobIds}
+            applyingJobIds={applyingJobIds}
+            applyRetriedJobIds={applyRetriedJobIds}
+            onCancelApply={handleCancelApply}
+            selfApplyJobIds={selfApplyJobIds}
+            onSelfApply={handleSelfApply}
+            onConfirmSelfApply={handleConfirmSelfApply}
+            emailGeneratedJobIds={emailGeneratedJobIds}
+            onSeeEmail={handleSeeEmail}
+          />
+        );
+      }
+      if (meta.type === "applicationStatusCard") {
+        const liveJobs = meta.jobIds.map(id => jobs.find(j => j.id === id)).filter(Boolean) as Job[];
+        const successCount = liveJobs.filter(j => j.status.applied).length;
+        const emailsSent = liveJobs.length > 0 && liveJobs.every(j => j.status.emailSent);
+        return (
+          <ApplicationStatusCard
+            jobCount={meta.totalJobs}
+            successCount={successCount}
+            emailsSent={emailsSent}
+            jobsSnapshot={{ jobs: liveJobs, totalJobs: meta.totalJobs }}
+            onLoadJobsSnapshot={handleLoadJobsSnapshot}
+          />
+        );
+      }
+      return null;
+    },
+    [jobs, matchingJobIds, applyErrorJobIds, applyingJobIds, applyRetriedJobIds, selfApplyJobIds, emailGeneratedJobIds, handleApplySingle, handleOpenEmail, handleViewDetail, handleMatchResumeSingle, handleViewResume, handleCancelApply, handleSelfApply, handleConfirmSelfApply, handleSeeEmail, handleLoadJobsSnapshot]
+  );
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -1972,6 +2029,7 @@ export function ChatLayout() {
               <ChatMessage
                 key={msg.id}
                 message={msg}
+                liveCustomComponent={msg.customComponentMeta ? renderLiveComponent(msg.customComponentMeta) : undefined}
                 onLoadJobsSnapshot={handleLoadJobsSnapshot}
               />
             ))}
@@ -2016,6 +2074,11 @@ export function ChatLayout() {
           applyingJobIds={applyingJobIds}
           applyRetriedJobIds={applyRetriedJobIds}
           onCancelApply={handleCancelApply}
+          selfApplyJobIds={selfApplyJobIds}
+          onSelfApply={handleSelfApply}
+          onConfirmSelfApply={handleConfirmSelfApply}
+          emailGeneratedJobIds={emailGeneratedJobIds}
+          onSeeEmail={handleSeeEmail}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}
           onSelectAll={selectAllJobs}

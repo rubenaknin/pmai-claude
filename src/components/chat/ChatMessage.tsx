@@ -50,6 +50,7 @@ export interface Message {
   role: MessageRole;
   content: string;
   customComponent?: ReactNode;
+  customComponentMeta?: { type: "chatJobCards" | "applicationStatusCard"; jobIds: string[]; totalJobs: number };
   isTyping?: boolean;
   _debug?: DebugInfo;
   jobsSnapshot?: { jobs: Job[]; totalJobs: number };
@@ -57,10 +58,11 @@ export interface Message {
 
 interface ChatMessageProps {
   message: Message;
+  liveCustomComponent?: ReactNode;
   onLoadJobsSnapshot?: (jobs: Job[], totalJobs: number) => void;
 }
 
-export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
+export function ChatMessage({ message, liveCustomComponent, onLoadJobsSnapshot }: ChatMessageProps) {
   // Action log messages — subtle centered line
   if (message.role === "action") {
     // Show animated dots for in-progress actions (present participle verbs)
@@ -103,7 +105,7 @@ export function ChatMessage({ message, onLoadJobsSnapshot }: ChatMessageProps) {
             {message.isTyping ? <TypingIndicator /> : renderInlineBold(message.content)}
           </div>
         )}
-        {message.customComponent}
+        {liveCustomComponent || message.customComponent}
         {message.jobsSnapshot && onLoadJobsSnapshot && (
           <Button
             variant="outline"

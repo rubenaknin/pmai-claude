@@ -36,6 +36,11 @@ interface JobCardProps {
   applyingJobIds?: Set<string>;
   applyRetriedJobIds?: Set<string>;
   onCancelApply?: (jobId: string) => void;
+  selfApplyJobIds?: Set<string>;
+  onSelfApply?: (jobId: string) => void;
+  onConfirmSelfApply?: (jobId: string) => void;
+  emailGeneratedJobIds?: Set<string>;
+  onSeeEmail?: (job: Job) => void;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
   compact?: boolean;
@@ -55,6 +60,11 @@ export function JobCard({
   applyingJobIds,
   applyRetriedJobIds,
   onCancelApply,
+  selfApplyJobIds,
+  onSelfApply,
+  onConfirmSelfApply,
+  emailGeneratedJobIds,
+  onSeeEmail,
   isSelected,
   onToggleSelect,
   compact,
@@ -66,6 +76,8 @@ export function JobCard({
   const hasApplyError = applyErrorJobIds?.has(job.id) ?? false;
   const isApplying = applyingJobIds?.has(job.id) ?? false;
   const hasRetried = applyRetriedJobIds?.has(job.id) ?? false;
+  const isSelfApplying = selfApplyJobIds?.has(job.id) ?? false;
+  const hasEmailGenerated = emailGeneratedJobIds?.has(job.id) ?? false;
 
   const handleCardClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -237,15 +249,17 @@ export function JobCard({
             ) : job.status.applied ? (
               <Button
                 size="sm"
-                variant="secondary"
-                className="text-xs h-7 shrink-0"
+                variant="ghost"
+                className="text-xs h-7 px-2 shrink-0 text-green-600"
                 disabled
+                title={`Applied ${job.status.appliedAt || ""}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
-                Applied
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               </Button>
+            ) : isSelfApplying ? (
+              <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} selfApplying onConfirmSelfApply={onConfirmSelfApply} />
             ) : (
-              <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} />
+              <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} onSelfApply={onSelfApply} />
             )}
             {/* Match my resume — three-state: sweep → green check → normal */}
             {onMatchResume && (
@@ -284,20 +298,32 @@ export function JobCard({
             <Button
               size="sm"
               variant="outline"
-              className="text-xs h-7 px-2 shrink-0"
-              onClick={(e) => { e.stopPropagation(); onEmailHM(job); }}
+              className={`text-xs h-7 px-2 shrink-0 ${hasEmailGenerated && !job.status.emailSent ? "gap-1" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasEmailGenerated && !job.status.emailSent && onSeeEmail) {
+                  onSeeEmail(job);
+                } else {
+                  onEmailHM(job);
+                }
+              }}
               disabled={job.status.emailSent}
-              title="Email hiring manager"
+              title={job.status.emailSent ? "Email sent" : hasEmailGenerated ? "See email" : "Email hiring manager"}
             >
               {job.status.emailSent ? (
                 compact ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><polyline points="20 6 9 17 4 12" /></svg>
                 ) : (
                   <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-green-600"><polyline points="20 6 9 17 4 12" /></svg>
                     Emailed
                   </>
                 )
+              ) : hasEmailGenerated ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
+                  See email
+                </>
               ) : (
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
               )}
@@ -309,8 +335,59 @@ export function JobCard({
   );
 }
 
-function JobCardApplyDropdown({ job, onApply, compact }: { job: Job; onApply: (jobId: string) => void; compact?: boolean }) {
+function JobCardApplyDropdown({ job, onApply, compact, selfApplying, onSelfApply, onConfirmSelfApply }: { job: Job; onApply: (jobId: string) => void; compact?: boolean; selfApplying?: boolean; onSelfApply?: (jobId: string) => void; onConfirmSelfApply?: (jobId: string) => void }) {
   const [open, setOpen] = useState(false);
+
+  if (selfApplying) {
+    // Self-applying state: "I applied" main button + dropdown with Auto-apply / Go to job post
+    return (
+      <div className="flex items-center gap-0 shrink-0">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="text-xs h-7 rounded-r-none"
+          onClick={(e) => { e.stopPropagation(); onConfirmSelfApply?.(job.id); }}
+        >
+          I applied
+        </Button>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="text-xs h-7 px-1.5 rounded-l-none border-l border-border/50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-44 p-1.5"
+            align="start"
+            side="bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { onApply(job.id); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v10" /><path d="m9 9 3 3 3-3" /><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></svg>
+              Auto-apply
+            </button>
+            <button
+              onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+              Go to job post
+            </button>
+          </PopoverContent>
+        </Popover>
+      </div>
+    );
+  }
+
+  // Default state: "Auto-apply" main button + dropdown with Apply by myself / Go to job post
   return (
     <div className="flex items-center gap-0 shrink-0">
       <Button
@@ -319,7 +396,7 @@ function JobCardApplyDropdown({ job, onApply, compact }: { job: Job; onApply: (j
         className="text-xs h-7 rounded-r-none"
         onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
       >
-        {compact ? "Auto-apply" : "Auto-apply"}
+        Auto-apply
       </Button>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -339,11 +416,18 @@ function JobCardApplyDropdown({ job, onApply, compact }: { job: Job; onApply: (j
           onClick={(e) => e.stopPropagation()}
         >
           <button
-            onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
+            onClick={() => { onSelfApply?.(job.id); setOpen(false); }}
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
             Apply by myself
+          </button>
+          <button
+            onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            Go to job post
           </button>
         </PopoverContent>
       </Popover>
