@@ -30,9 +30,11 @@ interface JobCardProps {
   onEmailHM: (job: Job) => void;
   onRemoveJob?: (jobId: string, mode: "single" | "title" | "location") => void;
   onMatchResume?: (job: Job) => void;
+  onViewResume?: (job: Job) => void;
   matchingJobIds?: Set<string>;
   applyErrorJobIds?: Set<string>;
   applyingJobIds?: Set<string>;
+  applyRetriedJobIds?: Set<string>;
   onCancelApply?: (jobId: string) => void;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
@@ -47,9 +49,11 @@ export function JobCard({
   onEmailHM,
   onRemoveJob,
   onMatchResume,
+  onViewResume,
   matchingJobIds,
   applyErrorJobIds,
   applyingJobIds,
+  applyRetriedJobIds,
   onCancelApply,
   isSelected,
   onToggleSelect,
@@ -61,6 +65,7 @@ export function JobCard({
   const isMatching = matchingJobIds?.has(job.id) ?? false;
   const hasApplyError = applyErrorJobIds?.has(job.id) ?? false;
   const isApplying = applyingJobIds?.has(job.id) ?? false;
+  const hasRetried = applyRetriedJobIds?.has(job.id) ?? false;
 
   const handleCardClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -209,14 +214,26 @@ export function JobCard({
                 </span>
               </button>
             ) : hasApplyError ? (
-              <Button
-                size="sm"
-                variant="destructive"
-                className="text-xs h-7 shrink-0"
-                onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-              >
-                Retry
-              </Button>
+              hasRetried ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 shrink-0"
+                  onClick={(e) => { e.stopPropagation(); window.open(job._apiData?.url, "_blank"); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+                  Apply manually
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="text-xs h-7 shrink-0 text-muted-foreground"
+                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+                >
+                  Retry
+                </Button>
+              )
             ) : job.status.applied ? (
               <Button
                 size="sm"
@@ -230,14 +247,21 @@ export function JobCard({
             ) : (
               <JobCardApplyDropdown job={job} onApply={onApply} compact={compact} />
             )}
-            {/* Match my resume — three-state: sweep → green checkmark → normal */}
+            {/* Match my resume — three-state: sweep → green check → normal */}
             {onMatchResume && (
               <Button
                 size="sm"
                 variant={job.status.resumeGenerated ? "secondary" : "outline"}
                 className={`text-xs h-7 shrink-0 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-green-600" : ""}`}
-                onClick={(e) => { e.stopPropagation(); onMatchResume(job); }}
-                disabled={isMatching || job.status.resumeGenerated}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (job.status.resumeGenerated && onViewResume) {
+                    onViewResume(job);
+                  } else if (!job.status.resumeGenerated) {
+                    onMatchResume(job);
+                  }
+                }}
+                disabled={isMatching}
               >
                 {isMatching ? (
                   <>
@@ -246,8 +270,8 @@ export function JobCard({
                   </>
                 ) : job.status.resumeGenerated ? (
                   <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
-                    {compact ? "Matched" : "Resume matched"}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    {compact ? "Resume" : "Matching Resume"}
                   </>
                 ) : (
                   <>
@@ -295,7 +319,7 @@ function JobCardApplyDropdown({ job, onApply, compact }: { job: Job; onApply: (j
         className="text-xs h-7 rounded-r-none"
         onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
       >
-        {compact ? "Apply" : "Apply for me"}
+        {compact ? "Auto-apply" : "Auto-apply"}
       </Button>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

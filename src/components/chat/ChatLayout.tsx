@@ -148,6 +148,7 @@ export function ChatLayout() {
   const [matchingJobIds, setMatchingJobIds] = useState<Set<string>>(new Set());
   const [applyErrorJobIds, setApplyErrorJobIds] = useState<Set<string>>(new Set());
   const [applyingJobIds, setApplyingJobIds] = useState<Set<string>>(new Set());
+  const [applyRetriedJobIds, setApplyRetriedJobIds] = useState<Set<string>>(new Set());
   const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
 
   const addApplyingId = useCallback((id: string) => {
@@ -209,6 +210,7 @@ export function ChatLayout() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
   const pendingMatchJobRef = useRef<Job | null>(null);
+  const pendingApplyResumeJobRef = useRef<Job | null>(null);
   const pendingAutoSearch = useRef(false);
   const handleUserMessageRef = useRef<(content: string) => void>(() => {});
 
@@ -318,10 +320,43 @@ export function ChatLayout() {
     []
   );
 
+  // --- Bot messaging helper (defined early so apply/match handlers can use it) ---
+  const addBotMessage = useCallback(
+    (content: string, extra?: Partial<Message>, debug?: DebugInfo) => {
+      const msg: Message = {
+        id: `bot-${Date.now()}-${Math.random()}`,
+        role: "bot",
+        content,
+        ...extra,
+        ...(debug ? { _debug: debug } : {}),
+      };
+      setMessages((prev) => [...prev, msg]);
+      return msg;
+    },
+    []
+  );
+
   const handleApplySingle = useCallback(
     async (jobId: string) => {
       const job = jobs.find((j) => j.id === jobId);
       if (!job || job.status.applied) return;
+
+      // If no resume generated yet, ask the user first via a bot message
+      if (!job.status.resumeGenerated) {
+        // Store the pending job for intent matching
+        pendingApplyResumeJobRef.current = job;
+        addBotMessage(
+          `Before I auto-apply to **${job.title}** at **${job.company}**, would you like me to generate a tailored resume first? This significantly improves your chances.`
+        );
+        setSuggestions(["Yes, generate a resume first", "No, apply with my resume on record"]);
+        return;
+      }
+
+      // Track if this is a retry (already had an error before)
+      const isRetry = applyErrorJobIds.has(jobId);
+      if (isRetry) {
+        setApplyRetriedJobIds((prev) => new Set(prev).add(jobId));
+      }
 
       // Clear any previous error for this job
       setApplyErrorJobIds((prev) => {
@@ -332,7 +367,7 @@ export function ChatLayout() {
 
       // Add to applying set (shows progress animation)
       addApplyingId(jobId);
-      addActionMessage(`Applying to ${job.title} at ${job.company}`);
+      addActionMessage(`Auto-applying to ${job.title} at ${job.company}`);
 
       // Create per-job AbortController
       const controller = new AbortController();
@@ -380,10 +415,13 @@ export function ChatLayout() {
           }
         } catch (err) {
           if ((err as Error).name === "AbortError") {
-            addActionMessage(`Cancelled apply to ${job.title} at ${job.company}`);
+            addActionMessage(`Cancelled auto-apply to ${job.title} at ${job.company}`);
           } else {
-            console.error("Apply/resume generation failed:", err);
+            console.error("Auto-apply failed:", err);
             setApplyErrorJobIds((prev) => new Set(prev).add(jobId));
+            addBotMessage(
+              `Auto-apply to **${job.title}** at **${job.company}** is currently unavailable. You can retry or apply manually on their website.`
+            );
           }
         } finally {
           removeApplyingId(jobId);
@@ -399,7 +437,7 @@ export function ChatLayout() {
         applyAbortControllers.current.delete(jobId);
       }
     },
-    [jobs, updateJob, addActionMessage, addApplyingId, removeApplyingId]
+    [jobs, updateJob, addActionMessage, addApplyingId, removeApplyingId, addBotMessage, applyErrorJobIds]
   );
 
   const handleCancelApply = useCallback(
@@ -558,22 +596,6 @@ export function ChatLayout() {
       });
       setTotalJobs(snapshotTotal);
       setShowJobPanel(true);
-    },
-    []
-  );
-
-  // --- Bot messaging helper ---
-  const addBotMessage = useCallback(
-    (content: string, extra?: Partial<Message>, debug?: DebugInfo) => {
-      const msg: Message = {
-        id: `bot-${Date.now()}-${Math.random()}`,
-        role: "bot",
-        content,
-        ...extra,
-        ...(debug ? { _debug: debug } : {}),
-      };
-      setMessages((prev) => [...prev, msg]);
-      return msg;
     },
     []
   );
@@ -793,7 +815,7 @@ export function ChatLayout() {
 
   // --- Match resume for a single job card click (posts bot message) ---
   const handleMatchResumeSingle = useCallback(
-    async (job: Job) => {
+    async (job: Job): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> => {
       // If jobs are selected, ask for clarification
       if (selectedJobIds.size > 0 && !selectedJobIds.has(job.id)) {
         pendingMatchJobRef.current = job;
@@ -804,7 +826,7 @@ export function ChatLayout() {
           `Just ${job.company}`,
           `Match resume for selected (${selectedJobIds.size})`,
         ]);
-        return;
+        return { success: false, error: "Pending user clarification" };
       }
 
       addActionMessage(`Matching resume for ${job.title} at ${job.company}`);
@@ -849,8 +871,18 @@ export function ChatLayout() {
         const reason = result.error || "unknown error";
         addBotMessage(`Sorry, I couldn't generate the tailored resume: ${reason}. Please try again.`);
       }
+      return result;
     },
     [handleMatchResume, addBotMessage, addActionMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail, selectedJobIds]
+  );
+
+  // --- View existing matched resume for a job ---
+  const handleViewResume = useCallback(
+    (job: Job) => {
+      // Re-trigger match which will fetch the cached resume
+      handleMatchResumeSingle(job);
+    },
+    [handleMatchResumeSingle]
   );
 
   // --- Match resume for all selected jobs ---
@@ -1094,6 +1126,44 @@ export function ChatLayout() {
         return;
       }
 
+      // Handle pending "generate resume before apply?" question
+      if (pendingApplyResumeJobRef.current) {
+        const pendingJob = pendingApplyResumeJobRef.current;
+        pendingApplyResumeJobRef.current = null;
+        setIsTyping(false);
+
+        if (lower.includes("yes") || lower.includes("generate") || lower.includes("tailor")) {
+          // Generate resume first, then auto-apply
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: match_resume(${pendingJob.title} at ${pendingJob.company}) then auto-apply]` },
+          ]);
+          addBotMessage(`Generating a tailored resume for **${pendingJob.title}** at **${pendingJob.company}**, then I'll auto-apply...`);
+          const result = await handleMatchResumeSingle(pendingJob);
+          if (result.success) {
+            // Now apply (job now has resumeGenerated=true)
+            handleApplySingle(pendingJob.id);
+          }
+          return;
+        } else {
+          // Apply directly without tailoring
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: auto-apply(${pendingJob.title} at ${pendingJob.company}, no tailor)]` },
+          ]);
+          // Force apply (skip the resume check by updating status first)
+          updateJob(pendingJob.id, (j) => ({
+            ...j,
+            status: { ...j.status, resumeGenerated: true },
+          }));
+          // Small delay to let state update flush
+          setTimeout(() => handleApplySingle(pendingJob.id), 50);
+          return;
+        }
+      }
+
       // Handle pending bulk apply tailor question
       if (pendingApplyJobsRef.current) {
         const pendingJobs = pendingApplyJobsRef.current;
@@ -1289,9 +1359,11 @@ export function ChatLayout() {
                       onEmailHM={handleOpenEmail}
                       onViewDetail={handleViewDetail}
                       onMatchResume={handleMatchResumeSingle}
+                      onViewResume={handleViewResume}
                       matchingJobIds={matchingJobIds}
                       applyErrorJobIds={applyErrorJobIds}
                       applyingJobIds={applyingJobIds}
+                      applyRetriedJobIds={applyRetriedJobIds}
                       onCancelApply={handleCancelApply}
                     />
                   ),
@@ -1417,6 +1489,7 @@ export function ChatLayout() {
       clearSelection,
       applyingJobIds,
       matchingJobIds,
+      updateJob,
     ]
   );
 
@@ -1499,8 +1572,11 @@ export function ChatLayout() {
                         onEmailHM={handleOpenEmail}
                         onViewDetail={handleViewDetail}
                         onMatchResume={handleMatchResumeSingle}
+                        onViewResume={handleViewResume}
                         matchingJobIds={matchingJobIds}
+                        applyErrorJobIds={applyErrorJobIds}
                         applyingJobIds={applyingJobIds}
+                        applyRetriedJobIds={applyRetriedJobIds}
                         onCancelApply={handleCancelApply}
                       />
                     ),
@@ -1767,9 +1843,11 @@ export function ChatLayout() {
           onRemoveJob={handleRemoveJob}
           onClose={() => setShowJobPanel(false)}
           onMatchResume={handleMatchResumeSingle}
+          onViewResume={handleViewResume}
           matchingJobIds={matchingJobIds}
           applyErrorJobIds={applyErrorJobIds}
           applyingJobIds={applyingJobIds}
+          applyRetriedJobIds={applyRetriedJobIds}
           onCancelApply={handleCancelApply}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}
