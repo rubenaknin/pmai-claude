@@ -209,6 +209,8 @@ export function ChatLayout() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialQueryHandled = useRef(false);
   const pendingMatchJobRef = useRef<Job | null>(null);
+  const pendingAutoSearch = useRef(false);
+  const handleUserMessageRef = useRef<(content: string) => void>(() => {});
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -540,9 +542,20 @@ export function ChatLayout() {
   }, [jobs]);
 
   // --- Load jobs snapshot (from "Show jobs" button in chat) ---
+  // Merges snapshot with current job statuses so applied/email/resume state isn't lost
   const handleLoadJobsSnapshot = useCallback(
     (snapshotJobs: Job[], snapshotTotal: number) => {
-      setJobs(snapshotJobs);
+      setJobs((currentJobs) => {
+        const currentMap = new Map(currentJobs.map((j) => [j.id, j]));
+        return snapshotJobs.map((sj) => {
+          const current = currentMap.get(sj.id);
+          if (current) {
+            // Preserve the latest status from current state
+            return { ...sj, status: { ...sj.status, ...current.status } };
+          }
+          return sj;
+        });
+      });
       setTotalJobs(snapshotTotal);
       setShowJobPanel(true);
     },
@@ -612,13 +625,18 @@ export function ChatLayout() {
 
           addBotMessage(
             nameStr
-              ? `Got your resume! I found you're ${nameStr}. What kind of roles are you looking for?`
-              : "Got your resume! What kind of roles are you looking for?"
+              ? `Got your resume, ${firstName}! Let me find matching jobs for you...`
+              : "Got your resume! Let me find matching jobs for you..."
           );
-          setSuggestions([
-            "Find me jobs that match my resume",
-            "Show me remote roles",
-          ]);
+
+          // Auto-trigger a job search after state updates flush
+          pendingAutoSearch.current = true;
+          setTimeout(() => {
+            if (pendingAutoSearch.current) {
+              pendingAutoSearch.current = false;
+              handleUserMessageRef.current("Find me jobs that match my resume");
+            }
+          }, 100);
         } else {
           addBotMessage(
             data.error || "Sorry, I couldn't process your resume. Please try a different file."
@@ -975,9 +993,10 @@ export function ChatLayout() {
       const total = targetJobs.length;
       const haveCount = withResume.length;
       const needCount = withoutResume.length;
-      addBotMessage(
-        `You want to apply to ${total} job${total !== 1 ? "s" : ""}. ${haveCount > 0 ? `${haveCount} already ${haveCount === 1 ? "has" : "have"} a tailored resume. ` : ""}Would you like me to create personalized resumes for the remaining ${needCount}?`
-      );
+      const resumeMsg = haveCount > 0
+        ? `You want to apply to ${total} job${total !== 1 ? "s" : ""}. ${haveCount} already ${haveCount === 1 ? "has" : "have"} a tailored resume. Would you like me to create personalized resumes for the other ${needCount}?`
+        : `You want to apply to ${total} job${total !== 1 ? "s" : ""}. Would you like me to create personalized resumes for ${needCount === total ? "each one" : `the ${needCount} that need one`}?`;
+      addBotMessage(resumeMsg);
       setSuggestions([
         "Yes, tailor resumes first",
         "No, apply with my resume on record",
@@ -1400,6 +1419,9 @@ export function ChatLayout() {
       matchingJobIds,
     ]
   );
+
+  // Keep ref in sync so file upload can call it without stale closure
+  handleUserMessageRef.current = handleUserMessage;
 
   // Handle initial query from homepage — wait for userStatus so we know resume state
   useEffect(() => {

@@ -19,7 +19,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   "near-me": "Near me",
 };
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 interface JobPanelProps {
   jobs: Job[];
@@ -157,7 +157,7 @@ export function JobPanel({
   );
 
   return (
-    <aside className="hidden lg:flex w-96 flex-col border-l border-border/50 bg-background overflow-hidden">
+    <aside className="hidden lg:flex w-[480px] flex-col border-l border-border/50 bg-background overflow-hidden">
       {/* Header */}
       <div className="border-b border-border/50 px-4 pt-3 pb-3 shrink-0 space-y-2.5">
         <div className="flex items-center justify-between">
@@ -342,28 +342,28 @@ export function JobPanel({
         </div>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-border/50 px-4 py-2 shrink-0">
-          <button
-            onClick={() => goToPage(page - 1)}
-            disabled={page === 0}
-            className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-          >
-            Previous
-          </button>
-          <span className="text-[11px] text-muted-foreground">
-            Page {page + 1} of {totalPages}
-          </span>
-          <button
-            onClick={() => goToPage(page + 1)}
-            disabled={page >= totalPages - 1}
-            className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-          >
-            Next
-          </button>
-        </div>
-      )}
+      {/* Pagination — always visible */}
+      <div className="flex items-center justify-between border-t border-border/50 px-4 py-2 shrink-0">
+        <button
+          onClick={() => goToPage(page - 1)}
+          disabled={page === 0}
+          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+        >
+          Previous
+        </button>
+        <span className="text-[11px] text-muted-foreground">
+          {totalPages > 1
+            ? `Page ${page + 1} of ${totalPages} · ${filteredAndSortedJobs.length} jobs`
+            : `${filteredAndSortedJobs.length} job${filteredAndSortedJobs.length !== 1 ? "s" : ""}`}
+        </span>
+        <button
+          onClick={() => goToPage(page + 1)}
+          disabled={page >= totalPages - 1}
+          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+        >
+          Next
+        </button>
+      </div>
     </aside>
   );
 }

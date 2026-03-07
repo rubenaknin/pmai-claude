@@ -84,7 +84,9 @@ export function Hero() {
       const res = await fetch("/api/resume/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.success) {
-        router.push(`/chat?q=${encodeURIComponent("Here's my resume — find jobs for me")}`);
+        // Build a search query from resume content
+        const query = "Find me jobs that match my resume";
+        router.push(`/chat?q=${encodeURIComponent(query)}`);
       } else {
         setIsUploading(false);
         alert(data.error || "Could not process your resume. Please try a different file.");
