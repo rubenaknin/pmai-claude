@@ -203,6 +203,27 @@ export function ChatLayout() {
   // Action log settings
   const [showActionLogs, setShowActionLogs] = useState(true);
 
+  // Bot avatar customization
+  const [botName, setBotName] = useState(() => {
+    if (typeof window === "undefined") return "Nora";
+    return localStorage.getItem("botName") || "Nora";
+  });
+  const [botAvatarUrl, setBotAvatarUrl] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("botAvatarUrl") || null;
+  });
+
+  const handleEditBot = useCallback((name: string, avatarUrl: string | null) => {
+    setBotName(name);
+    setBotAvatarUrl(avatarUrl);
+    localStorage.setItem("botName", name);
+    if (avatarUrl) {
+      localStorage.setItem("botAvatarUrl", avatarUrl);
+    } else {
+      localStorage.removeItem("botAvatarUrl");
+    }
+  }, []);
+
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -466,7 +487,7 @@ export function ChatLayout() {
             console.error("Auto-apply failed:", err);
             setApplyErrorJobIds((prev) => new Set(prev).add(jobId));
             addBotMessage(
-              `Auto-apply to **${job.title}** at **${job.company}** is currently unavailable. You can retry or apply manually on their website.`
+              `Auto-apply to **${job.title}** at **${job.company}** is currently unavailable. You can retry or apply [manually on their website](${job._apiData?.url || "#"}).`
             );
             setSuggestions(["Find more jobs", "Help me prep for interviews"]);
           }
@@ -2000,7 +2021,13 @@ export function ChatLayout() {
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-3 overflow-hidden whitespace-nowrap">
           {sidebarCollapsed ? (
-            <span className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-bold shrink-0">P</span>
+            <span className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
+              <svg width="16" height="16" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 6L3.4051 7.09486L4.5 7.5L3.4051 7.90514L3 9L2.5949 7.90514L1.5 7.5L2.5949 7.09486L3 6Z" fill="currentColor"/>
+                <path d="M3.5 1L4.0402 2.45982L5.5 3L4.0402 3.54018L3.5 5L2.9598 3.54018L1.5 3L2.9598 2.45982L3.5 1Z" fill="currentColor"/>
+                <path d="M7 3L7.8103 5.18973L10 6L7.8103 6.81027L7 9L6.1897 6.81027L4 6L6.1897 5.18973L7 3Z" fill="currentColor"/>
+              </svg>
+            </span>
           ) : (
             <Image src="/logo.svg" alt="PitchMeAI" width={80} height={26} className="h-7 w-auto shrink-0" />
           )}
@@ -2145,7 +2172,7 @@ export function ChatLayout() {
         </div>
 
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
-          <div className="mx-auto max-w-2xl space-y-4 p-4">
+          <div className="mx-auto max-w-4xl space-y-4 p-4">
             {/* Empty state — shown when no messages yet */}
             {messages.length === 0 && !isTyping && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -2175,17 +2202,22 @@ export function ChatLayout() {
                 liveCustomComponent={msg.customComponentMeta ? renderLiveComponent(msg.customComponentMeta) : undefined}
                 onLoadJobsSnapshot={handleLoadJobsSnapshot}
                 onStop={handleStop}
+                botName={botName}
+                botAvatarUrl={botAvatarUrl}
+                onEditBot={handleEditBot}
               />
             ))}
             {isTyping && (
               <ChatMessage
                 message={{ id: "typing", role: "bot", content: "", isTyping: true }}
+                botName={botName}
+                botAvatarUrl={botAvatarUrl}
               />
             )}
           </div>
         </ScrollArea>
 
-        <div className="shrink-0 mx-auto w-full max-w-2xl">
+        <div className="shrink-0 mx-auto w-full max-w-4xl">
           <ChatInput
             onSend={handleUserMessage}
             onFileUpload={handleFileUpload}

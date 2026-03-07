@@ -62,7 +62,7 @@ export function ResumePreviewCard({
   if (collapsed) {
     return (
       <Card
-        className="max-w-sm border-border/50 bg-card cursor-pointer hover:bg-muted/30 transition-colors"
+        className="max-w-lg border-border/50 bg-card cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={() => setCollapsed(false)}
       >
         <CardContent className="py-2.5 px-4">
@@ -81,7 +81,7 @@ export function ResumePreviewCard({
   }
 
   return (
-    <Card className="max-w-sm border-border/50 bg-card">
+    <Card className="max-w-lg border-border/50 bg-card">
       <CardContent className="pt-4 pb-4 px-4">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-semibold">Tailored Resume</h4>

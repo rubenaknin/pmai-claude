@@ -106,7 +106,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
   return (
     <div
       onClick={() => onViewDetail(job)}
-      className={`rounded-xl border border-border/50 bg-card p-3 transition-colors hover:bg-muted/30 cursor-pointer ${isHighlighted ? "animate-[highlight-pulse_1.5s_ease-in-out]" : ""}`}
+      className={`rounded-xl border border-border/50 bg-card p-3 transition-colors hover:bg-muted/30 cursor-pointer ${isHighlighted ? "animate-[action-stroke_2s_ease-in-out]" : ""}`}
     >
       <div className="flex items-start gap-3">
         <CompanyLogo company={job.company} apiData={job._apiData} />
@@ -172,7 +172,15 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
                   Apply manually
                 </Button>
               ) : (
-                <RetryDropdown job={job} onApply={onApply} onSelfApply={onSelfApply} />
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="text-xs h-7 shrink-0"
+                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+                  Auto-apply
+                </Button>
               )
             ) : job.status.applied ? (
               <span
@@ -203,24 +211,24 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
               {isMatching ? (
                 <>
                   <span className="absolute inset-y-0 left-0 bg-primary/30 animate-[progress-fill_30s_ease-out_forwards]" />
-                  <span className="relative z-10 flex items-center gap-1">Matching...</span>
+                  <span className="relative z-10 flex items-center gap-1">Generating...</span>
                 </>
               ) : job.status.resumeGenerated ? (
                 <>
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /></svg>
-                  Matching Resume
+                  Resume
                 </>
               ) : (
                 <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
-                  Match
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M15 4V2" /><path d="M15 16v-2" /><path d="M8 9h2" /><path d="M20 9h2" /><path d="M17.8 11.8 19 13" /><path d="M15 9h.01" /><path d="M17.8 6.2 19 5" /><path d="m3 21 9-9" /><path d="M12.2 6.2 11 5" /></svg>
+                  Resume
                 </>
               )}
             </Button>
             <Button
               size="sm"
               variant={hasEmailGenerated && !job.status.emailSent ? "outline" : "outline"}
-              className={`text-xs h-7 px-2 shrink-0 ${isEmailGenerating ? "relative overflow-hidden" : ""} ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
+              className={`text-xs h-7 shrink-0 ${isEmailGenerating ? "relative overflow-hidden" : ""} ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (isEmailGenerating) return;
@@ -246,7 +254,10 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
                   See email
                 </>
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
+                  Intro Email
+                </>
               )}
             </Button>
             <Button
@@ -264,47 +275,6 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
   );
 }
 
-function RetryDropdown({ job, onApply, onSelfApply }: { job: Job; onApply: (jobId: string) => void; onSelfApply?: (jobId: string) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="flex items-center gap-0 shrink-0">
-      <Button
-        size="sm"
-        variant="secondary"
-        className="text-xs h-7 rounded-r-none text-muted-foreground"
-        onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-      >
-        Retry
-      </Button>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="text-xs h-7 px-1.5 rounded-l-none border-l border-border/50 text-muted-foreground"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-44 p-1.5"
-          align="start"
-          side="bottom"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => { onSelfApply?.(job.id); setOpen(false); }}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
-            Apply by myself
-          </button>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
 
 function ApplyDropdown({ job, onApply, selfApplying, onSelfApply, onConfirmSelfApply }: { job: Job; onApply: (jobId: string) => void; selfApplying?: boolean; onSelfApply?: (jobId: string) => void; onConfirmSelfApply?: (jobId: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -315,7 +285,7 @@ function ApplyDropdown({ job, onApply, selfApplying, onSelfApply, onConfirmSelfA
       <div className="flex items-center gap-0 shrink-0">
         <Button
           size="sm"
-          variant="secondary"
+          variant="default"
           className="text-xs h-7 rounded-r-none"
           onClick={(e) => { e.stopPropagation(); onConfirmSelfApply?.(job.id); }}
         >
@@ -342,15 +312,8 @@ function ApplyDropdown({ job, onApply, selfApplying, onSelfApply, onConfirmSelfA
               onClick={() => { onApply(job.id); setOpen(false); }}
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v10" /><path d="m9 9 3 3 3-3" /><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 4V2" /><path d="M15 16v-2" /><path d="M8 9h2" /><path d="M20 9h2" /><path d="M17.8 11.8 19 13" /><path d="M15 9h.01" /><path d="M17.8 6.2 19 5" /><path d="m3 21 9-9" /><path d="M12.2 6.2 11 5" /></svg>
               Auto-apply
-            </button>
-            <button
-              onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
-              Go to job post
             </button>
           </PopoverContent>
         </Popover>
@@ -358,7 +321,7 @@ function ApplyDropdown({ job, onApply, selfApplying, onSelfApply, onConfirmSelfA
     );
   }
 
-  // Default state: "Auto-apply" main button + dropdown with Apply by myself / Go to job post
+  // Default state: "Auto-apply" main button + dropdown with Apply by myself
   return (
     <div className="flex items-center gap-0 shrink-0">
       <Button
@@ -392,13 +355,6 @@ function ApplyDropdown({ job, onApply, selfApplying, onSelfApply, onConfirmSelfA
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
             Apply by myself
-          </button>
-          <button
-            onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
-            Go to job post
           </button>
         </PopoverContent>
       </Popover>
