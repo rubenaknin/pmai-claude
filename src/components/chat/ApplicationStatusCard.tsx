@@ -10,6 +10,8 @@ interface ApplicationStatusCardProps {
   successCount?: number;
   failCount?: number;
   onShowJobs?: () => void;
+  jobsSnapshot?: { jobs: import("./jobData").Job[]; totalJobs: number };
+  onLoadJobsSnapshot?: (jobs: import("./jobData").Job[], totalJobs: number) => void;
 }
 
 export function ApplicationStatusCard({
@@ -18,6 +20,8 @@ export function ApplicationStatusCard({
   successCount,
   failCount,
   onShowJobs,
+  jobsSnapshot,
+  onLoadJobsSnapshot,
 }: ApplicationStatusCardProps) {
   const displaySuccess = successCount ?? jobCount;
   const displayFail = failCount ?? 0;
@@ -99,12 +103,18 @@ export function ApplicationStatusCard({
             </div>
           )}
         </div>
-        {onShowJobs && (
+        {(onLoadJobsSnapshot || onShowJobs) && (
           <Button
             variant="outline"
             size="sm"
             className="w-full mt-3 text-xs h-7 gap-1.5"
-            onClick={onShowJobs}
+            onClick={() => {
+              if (onLoadJobsSnapshot && jobsSnapshot) {
+                onLoadJobsSnapshot(jobsSnapshot.jobs, jobsSnapshot.totalJobs);
+              } else if (onShowJobs) {
+                onShowJobs();
+              }
+            }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /><rect width="7" height="7" x="3" y="3" rx="1" /></svg>
             Show jobs

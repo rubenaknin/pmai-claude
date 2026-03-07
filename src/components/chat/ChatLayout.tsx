@@ -124,6 +124,7 @@ export function ChatLayout() {
     initialQuery ? [] : ["Find me jobs", "Here's my resume — find jobs for me"]
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [showJobPanel, setShowJobPanel] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
@@ -146,6 +147,20 @@ export function ChatLayout() {
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [matchingJobIds, setMatchingJobIds] = useState<Set<string>>(new Set());
   const [applyErrorJobIds, setApplyErrorJobIds] = useState<Set<string>>(new Set());
+  const [applyingJobIds, setApplyingJobIds] = useState<Set<string>>(new Set());
+  const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
+
+  const addApplyingId = useCallback((id: string) => {
+    setApplyingJobIds((prev) => new Set(prev).add(id));
+  }, []);
+
+  const removeApplyingId = useCallback((id: string) => {
+    setApplyingJobIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   const addMatchingId = useCallback((id: string) => {
     setMatchingJobIds((prev) => new Set(prev).add(id));
@@ -168,6 +183,24 @@ export function ChatLayout() {
 
   // Action log settings
   const [showActionLogs, setShowActionLogs] = useState(true);
+
+  // Dark mode
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const stored = localStorage.getItem("darkMode");
+    if (stored !== null) return stored === "true";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  const toggleDarkMode = useCallback((on: boolean) => {
+    setDarkMode(on);
+    if (on) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("darkMode", String(on));
+  }, []);
 
   // Drag & drop state for the chat area
   const [isChatDragging, setIsChatDragging] = useState(false);
@@ -295,12 +328,13 @@ export function ChatLayout() {
         return next;
       });
 
-      // Optimistic update
-      updateJob(jobId, (j) => ({
-        ...j,
-        status: { ...j.status, applied: true, appliedAt: "just now" },
-      }));
-      addActionMessage(`Applied to ${job.title} at ${job.company}`);
+      // Add to applying set (shows progress animation)
+      addApplyingId(jobId);
+      addActionMessage(`Applying to ${job.title} at ${job.company}`);
+
+      // Create per-job AbortController
+      const controller = new AbortController();
+      applyAbortControllers.current.set(jobId, controller);
 
       // Call API if we have apiData
       if (job._apiData?.url && job._apiData?.jobId) {
@@ -316,11 +350,17 @@ export function ChatLayout() {
               jobDetails: job._apiData.jobDetails || job.description,
               location: job._apiData.location || job.location,
             }),
+            signal: controller.signal,
           });
           const data = await res.json();
           if (!res.ok) {
             throw new Error(data.error || `API error ${res.status}`);
           }
+          // Success
+          updateJob(jobId, (j) => ({
+            ...j,
+            status: { ...j.status, applied: true, appliedAt: "just now" },
+          }));
           if (data.html) {
             setResumeData({
               html: data.html,
@@ -337,18 +377,39 @@ export function ChatLayout() {
             }));
           }
         } catch (err) {
-          console.error("Apply/resume generation failed:", err);
-          // Revert optimistic update
-          updateJob(jobId, (j) => ({
-            ...j,
-            status: { ...j.status, applied: false, appliedAt: null },
-          }));
-          // Mark as error
-          setApplyErrorJobIds((prev) => new Set(prev).add(jobId));
+          if ((err as Error).name === "AbortError") {
+            addActionMessage(`Cancelled apply to ${job.title} at ${job.company}`);
+          } else {
+            console.error("Apply/resume generation failed:", err);
+            setApplyErrorJobIds((prev) => new Set(prev).add(jobId));
+          }
+        } finally {
+          removeApplyingId(jobId);
+          applyAbortControllers.current.delete(jobId);
         }
+      } else {
+        // No API data — mark as applied immediately
+        updateJob(jobId, (j) => ({
+          ...j,
+          status: { ...j.status, applied: true, appliedAt: "just now" },
+        }));
+        removeApplyingId(jobId);
+        applyAbortControllers.current.delete(jobId);
       }
     },
-    [jobs, updateJob, addActionMessage]
+    [jobs, updateJob, addActionMessage, addApplyingId, removeApplyingId]
+  );
+
+  const handleCancelApply = useCallback(
+    (jobId: string) => {
+      const controller = applyAbortControllers.current.get(jobId);
+      if (controller) {
+        controller.abort();
+      }
+      removeApplyingId(jobId);
+      applyAbortControllers.current.delete(jobId);
+    },
+    [removeApplyingId]
   );
 
   const handleSave = useCallback(
@@ -831,12 +892,10 @@ export function ChatLayout() {
     [addMatchingId, removeMatchingId, handleMatchResume, addBotMessage]
   );
 
-  // --- Apply all ---
-  const handleApplyAll = useCallback(async () => {
-    // If jobs are selected, apply only to those; otherwise apply to all
-    const targetJobs = selectedJobIds.size > 0
-      ? jobs.filter((j) => selectedJobIds.has(j.id))
-      : jobs;
+  // --- Apply all helpers ---
+  const pendingApplyJobsRef = useRef<Job[] | null>(null);
+
+  const executeApplyAll = useCallback(async (targetJobs: Job[]) => {
     const count = targetJobs.length;
     const targetIds = new Set(targetJobs.map((j) => j.id));
 
@@ -847,11 +906,10 @@ export function ChatLayout() {
           : j
       )
     );
-    if (selectedJobIds.size > 0) clearSelection();
     setSuggestions([]);
 
     addBotMessage(
-      `Applying to ${count} job${count !== 1 ? "s" : ""}... I'm tailoring your resume for each position to maximize your chances.`
+      `Applying to ${count} job${count !== 1 ? "s" : ""}...`
     );
 
     // Fire bulk resume generation in background for the first job
@@ -887,26 +945,9 @@ export function ChatLayout() {
     }
 
     addBotMessage(
-      "Here's a preview of how I adapted your resume for the top match:",
-      {
-        customComponent: (
-          <ResumePreviewCard
-            jobTitle={firstJob?.title}
-            company={firstJob?.company}
-            highlights={resumeData?.highlights}
-            pdfFileName={resumeData?.pdfFileName}
-            onDownload={(resumeData?.pdfFileName || resumeData?.pdfUrl) ? () => handleDownloadResume(resumeData?.pdfFileName, resumeData?.pdfUrl) : undefined}
-            onPreviewEdit={resumeData?.html ? () => handlePreviewEditResume(resumeData!.html) : undefined}
-            onApply={firstJob ? () => handleApplySingle(firstJob.id) : undefined}
-            onEmailHM={firstJob ? () => handleOpenEmail(firstJob) : undefined}
-          />
-        ),
-      }
-    );
-    addBotMessage(
       `All done! I've submitted ${count} tailored applications.`,
       {
-        customComponent: <ApplicationStatusCard jobCount={count} onShowJobs={() => setShowJobPanel(true)} />,
+        customComponent: <ApplicationStatusCard jobCount={count} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
       }
     );
     addBotMessage(
@@ -916,11 +957,42 @@ export function ChatLayout() {
       "Yes, generate emails for me",
       "No thanks, just the applications",
     ]);
-  }, [addBotMessage, jobs, selectedJobIds, clearSelection, resumeData, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail]);
+  }, [addBotMessage, handleLoadJobsSnapshot]);
+
+  const handleApplyAll = useCallback(async () => {
+    // If jobs are selected, apply only to those; otherwise apply to all
+    const targetJobs = selectedJobIds.size > 0
+      ? jobs.filter((j) => selectedJobIds.has(j.id))
+      : jobs;
+    if (selectedJobIds.size > 0) clearSelection();
+
+    const withResume = targetJobs.filter((j) => j.status.resumeGenerated);
+    const withoutResume = targetJobs.filter((j) => !j.status.resumeGenerated);
+
+    if (withoutResume.length > 0) {
+      // Ask before tailoring
+      pendingApplyJobsRef.current = targetJobs;
+      const total = targetJobs.length;
+      const haveCount = withResume.length;
+      const needCount = withoutResume.length;
+      addBotMessage(
+        `You want to apply to ${total} job${total !== 1 ? "s" : ""}. ${haveCount > 0 ? `${haveCount} already ${haveCount === 1 ? "has" : "have"} a tailored resume. ` : ""}Would you like me to create personalized resumes for the remaining ${needCount}?`
+      );
+      setSuggestions([
+        "Yes, tailor resumes first",
+        "No, apply with my resume on record",
+      ]);
+      return;
+    }
+
+    // All already have resumes — apply directly
+    await executeApplyAll(targetJobs);
+  }, [jobs, selectedJobIds, clearSelection, addBotMessage, executeApplyAll]);
 
   // --- Email all ---
   const handleEmailAll = useCallback(async () => {
     const count = jobs.length;
+    const snapshot = [...jobs];
     setJobs((prev) =>
       prev.map((j) => ({
         ...j,
@@ -935,7 +1007,7 @@ export function ChatLayout() {
       "Done! I've sent a tailored email to each hiring manager highlighting why you're a great fit.",
       {
         customComponent: (
-          <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} />
+          <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: snapshot, totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />
         ),
       }
     );
@@ -943,7 +1015,7 @@ export function ChatLayout() {
       "I'll notify you as soon as any hiring manager responds. Anything else I can help with?"
     );
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
-  }, [addBotMessage, jobs.length]);
+  }, [addBotMessage, jobs, handleLoadJobsSnapshot]);
 
   // --- Main message handler (API-driven) ---
   const handleUserMessage = useCallback(
@@ -1003,6 +1075,35 @@ export function ChatLayout() {
         return;
       }
 
+      // Handle pending bulk apply tailor question
+      if (pendingApplyJobsRef.current) {
+        const pendingJobs = pendingApplyJobsRef.current;
+        pendingApplyJobsRef.current = null;
+        setIsTyping(false);
+
+        if (lower.includes("yes, tailor") || lower.includes("tailor resumes")) {
+          // Match resumes first, then apply
+          const needResume = pendingJobs.filter((j) => !j.status.resumeGenerated);
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: match_resume(${needResume.length} jobs) then bulk_apply]` },
+          ]);
+          await handleMatchResumeForSelected(needResume);
+          await executeApplyAll(pendingJobs);
+          return;
+        } else {
+          // Apply directly without tailoring
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "user", content },
+            { role: "assistant", content: `[Action: bulk_apply(${pendingJobs.length} jobs, no tailor)]` },
+          ]);
+          await executeApplyAll(pendingJobs);
+          return;
+        }
+      }
+
       // Selection-based actions
       if (lower.includes("apply to selected") || lower.includes("apply for selected")) {
         if (selectedJobs.length > 0) {
@@ -1021,7 +1122,7 @@ export function ChatLayout() {
           );
           addBotMessage(
             `Done! I've submitted ${targetJobs.length} tailored applications.`,
-            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} onShowJobs={() => setShowJobPanel(true)} /> }
+            { customComponent: <ApplicationStatusCard jobCount={targetJobs.length} jobsSnapshot={{ jobs: [...targetJobs], totalJobs: targetJobs.length }} onLoadJobsSnapshot={handleLoadJobsSnapshot} /> }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -1047,7 +1148,7 @@ export function ChatLayout() {
           addBotMessage(`Sending personalized emails to hiring managers at ${count} selected companies...`);
           addBotMessage(
             "Done! I've sent a tailored email to each hiring manager.",
-            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} /> }
+            { customComponent: <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: [...selectedJobs], totalJobs: count }} onLoadJobsSnapshot={handleLoadJobsSnapshot} /> }
           );
           setChatHistory((prev) => [
             ...prev,
@@ -1171,6 +1272,8 @@ export function ChatLayout() {
                       onMatchResume={handleMatchResumeSingle}
                       matchingJobIds={matchingJobIds}
                       applyErrorJobIds={applyErrorJobIds}
+                      applyingJobIds={applyingJobIds}
+                      onCancelApply={handleCancelApply}
                     />
                   ),
                 }, debugInfo);
@@ -1230,7 +1333,7 @@ export function ChatLayout() {
                 }))
               );
               addBotMessage(data.botMessage, {
-                customComponent: <ApplicationStatusCard jobCount={count} onShowJobs={() => setShowJobPanel(true)} />,
+                customComponent: <ApplicationStatusCard jobCount={count} jobsSnapshot={{ jobs: [...jobs], totalJobs }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />,
               }, debugInfo);
             } else {
               addBotMessage(data.botMessage, undefined, debugInfo);
@@ -1248,7 +1351,7 @@ export function ChatLayout() {
               );
               addBotMessage(data.botMessage, {
                 customComponent: (
-                  <ApplicationStatusCard jobCount={count} emailsSent={true} onShowJobs={() => setShowJobPanel(true)} />
+                  <ApplicationStatusCard jobCount={count} emailsSent={true} jobsSnapshot={{ jobs: [...jobs], totalJobs }} onLoadJobsSnapshot={handleLoadJobsSnapshot} />
                 ),
               }, debugInfo);
             } else {
@@ -1279,8 +1382,10 @@ export function ChatLayout() {
       buildJobsContext,
       addBotMessage,
       handleApplyAll,
+      executeApplyAll,
       handleEmailAll,
       handleApplySingle,
+      handleCancelApply,
       handleSave,
       handleViewDetail,
       handleOpenEmail,
@@ -1291,6 +1396,8 @@ export function ChatLayout() {
       selectedJobs,
       selectedJobIds,
       clearSelection,
+      applyingJobIds,
+      matchingJobIds,
     ]
   );
 
@@ -1371,6 +1478,8 @@ export function ChatLayout() {
                         onViewDetail={handleViewDetail}
                         onMatchResume={handleMatchResumeSingle}
                         matchingJobIds={matchingJobIds}
+                        applyingJobIds={applyingJobIds}
+                        onCancelApply={handleCancelApply}
                       />
                     ),
                   },
@@ -1418,12 +1527,18 @@ export function ChatLayout() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border/50 bg-muted/30 transition-transform lg:static lg:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        onMouseEnter={() => setSidebarCollapsed(false)}
+        onMouseLeave={() => setSidebarCollapsed(true)}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border/50 bg-muted/30 transition-all duration-300 lg:static lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0 w-72" : "-translate-x-full w-72"
+        } ${sidebarCollapsed ? "lg:w-12" : "lg:w-72"}`}
       >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-4">
-          <Image src="/logo.svg" alt="PitchMeAI" width={80} height={26} className="h-7 w-auto" />
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-3 overflow-hidden whitespace-nowrap">
+          {sidebarCollapsed ? (
+            <span className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-bold shrink-0">P</span>
+          ) : (
+            <Image src="/logo.svg" alt="PitchMeAI" width={80} height={26} className="h-7 w-auto shrink-0" />
+          )}
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-muted-foreground hover:text-foreground"
@@ -1431,17 +1546,18 @@ export function ChatLayout() {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
-        <div className="flex flex-1 flex-col min-h-0">
-          <div className="p-3 shrink-0">
+        <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+          <div className="p-2 shrink-0">
             <button
               onClick={handleNewConversation}
-              className="flex w-full items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
+              className={`flex items-center gap-2 rounded-lg border border-border/50 text-sm text-muted-foreground hover:bg-muted transition-colors overflow-hidden whitespace-nowrap ${sidebarCollapsed ? "w-8 h-8 justify-center p-0 lg:w-8" : "w-full px-3 py-2"}`}
+              title="New Conversation"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-              New Conversation
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+              <span className={sidebarCollapsed ? "lg:hidden" : ""}>New Conversation</span>
             </button>
           </div>
-          <nav className="flex-1 overflow-y-auto px-3 space-y-1">
+          <nav className="flex-1 overflow-y-auto px-2 space-y-1">
             {conversations.map((convo) => (
               <div
                 key={convo.id}
@@ -1450,30 +1566,36 @@ export function ChatLayout() {
                   saveCurrentConversation();
                   loadConversation(convo);
                 }}
-                className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors truncate ${
+                className={`rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors truncate overflow-hidden whitespace-nowrap ${
+                  sidebarCollapsed ? "lg:px-0 lg:flex lg:justify-center" : ""
+                } ${
                   convo.id === activeConversationId
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
+                title={convo.title}
               >
-                {convo.title}
+                {sidebarCollapsed ? (
+                  <span className="hidden lg:inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                ) : null}
+                <span className={sidebarCollapsed ? "lg:hidden" : ""}>{convo.title}</span>
               </div>
             ))}
-            {conversations.length === 0 && (
+            {conversations.length === 0 && !sidebarCollapsed && (
               <p className="px-3 py-4 text-xs text-muted-foreground/60 text-center">
                 Your conversations will appear here
               </p>
             )}
           </nav>
           {/* Bottom links — pinned to bottom */}
-          <div className="shrink-0 border-t border-border/50 p-3 space-y-1">
-            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect width="20" height="14" x="2" y="6" rx="2" /></svg>
-              My Applications
+          <div className="shrink-0 border-t border-border/50 p-2 space-y-1">
+            <button className={`flex items-center gap-2.5 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors overflow-hidden whitespace-nowrap ${sidebarCollapsed ? "w-8 h-8 justify-center p-0 lg:w-8" : "w-full px-3 py-2"}`} title="My Applications">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect width="20" height="14" x="2" y="6" rx="2" /></svg>
+              <span className={sidebarCollapsed ? "lg:hidden" : ""}>My Applications</span>
             </button>
-            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
-              Settings
+            <button className={`flex items-center gap-2.5 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors overflow-hidden whitespace-nowrap ${sidebarCollapsed ? "w-8 h-8 justify-center p-0 lg:w-8" : "w-full px-3 py-2"}`} title="Settings">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
+              <span className={sidebarCollapsed ? "lg:hidden" : ""}>Settings</span>
             </button>
           </div>
         </div>
@@ -1523,15 +1645,35 @@ export function ChatLayout() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-52 p-3" align="end" side="bottom">
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showActionLogs}
-                  onChange={(e) => setShowActionLogs(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-border/50 text-primary focus:ring-primary/30"
-                />
-                Show action logs in chat
+            <PopoverContent className="w-56 p-3 space-y-3" align="end" side="bottom">
+              <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
+                <span>Show action logs</span>
+                <button
+                  role="switch"
+                  aria-checked={showActionLogs}
+                  onClick={() => setShowActionLogs(!showActionLogs)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showActionLogs ? "bg-primary" : "bg-muted-foreground/30"}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${showActionLogs ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+                </button>
+              </label>
+              <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
+                <span className="flex items-center gap-1.5">
+                  {darkMode ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+                  )}
+                  Dark mode
+                </span>
+                <button
+                  role="switch"
+                  aria-checked={darkMode}
+                  onClick={() => toggleDarkMode(!darkMode)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${darkMode ? "bg-primary" : "bg-muted-foreground/30"}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${darkMode ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+                </button>
               </label>
             </PopoverContent>
           </Popover>
@@ -1605,6 +1747,8 @@ export function ChatLayout() {
           onMatchResume={handleMatchResumeSingle}
           matchingJobIds={matchingJobIds}
           applyErrorJobIds={applyErrorJobIds}
+          applyingJobIds={applyingJobIds}
+          onCancelApply={handleCancelApply}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}
           onSelectAll={selectAllJobs}

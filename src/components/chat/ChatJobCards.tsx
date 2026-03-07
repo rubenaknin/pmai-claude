@@ -12,6 +12,8 @@ interface ChatJobCardsProps {
   onMatchResume: (job: Job) => void;
   matchingJobIds?: Set<string>;
   applyErrorJobIds?: Set<string>;
+  applyingJobIds?: Set<string>;
+  onCancelApply?: (jobId: string) => void;
 }
 
 export function ChatJobCards({
@@ -23,6 +25,8 @@ export function ChatJobCards({
   onMatchResume,
   matchingJobIds,
   applyErrorJobIds,
+  applyingJobIds,
+  onCancelApply,
 }: ChatJobCardsProps) {
   const displayed = jobs.slice(0, 5);
   const remaining = totalJobs - displayed.length;
@@ -43,6 +47,8 @@ export function ChatJobCards({
             onMatchResume={onMatchResume}
             matchingJobIds={matchingJobIds}
             applyErrorJobIds={applyErrorJobIds}
+            applyingJobIds={applyingJobIds}
+            onCancelApply={onCancelApply}
           />
         ))}
       </div>

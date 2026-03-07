@@ -81,11 +81,14 @@ interface ChatJobCardProps {
   onMatchResume: (job: Job) => void;
   matchingJobIds?: Set<string>;
   applyErrorJobIds?: Set<string>;
+  applyingJobIds?: Set<string>;
+  onCancelApply?: (jobId: string) => void;
 }
 
-export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResume, matchingJobIds, applyErrorJobIds }: ChatJobCardProps) {
+export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResume, matchingJobIds, applyErrorJobIds, applyingJobIds, onCancelApply }: ChatJobCardProps) {
   const isMatching = matchingJobIds?.has(job.id) ?? false;
   const hasApplyError = applyErrorJobIds?.has(job.id) ?? false;
+  const isApplying = applyingJobIds?.has(job.id) ?? false;
   return (
     <div
       onClick={() => onViewDetail(job)}
@@ -130,30 +133,33 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
           <div className="border-t border-border/30 my-2" />
 
           {/* Actions */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {hasApplyError ? (
-              <div className="flex items-center gap-0">
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="text-xs h-7 rounded-r-none"
-                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-                >
-                  Retry apply
-                </Button>
-                <Button
-                  size="sm"
-                  className="text-xs h-7 rounded-l-none border-l border-white/20 bg-orange-500 hover:bg-orange-600 text-white"
-                  onClick={(e) => { e.stopPropagation(); window.open(job._apiData?.url, "_blank"); }}
-                >
-                  Apply myself
-                </Button>
-              </div>
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            {isApplying ? (
+              <button
+                className="group relative overflow-hidden inline-flex items-center justify-center rounded-md text-xs h-7 px-3 bg-primary text-primary-foreground shrink-0 cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onCancelApply?.(job.id); }}
+              >
+                <span className="absolute inset-y-0 left-0 bg-primary-foreground/15 animate-[progress-fill_20s_ease-out_forwards]" />
+                <span className="relative z-10 flex items-center gap-1 group-hover:hidden">Applying...</span>
+                <span className="relative z-10 items-center gap-1 hidden group-hover:flex">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                  Stop
+                </span>
+              </button>
+            ) : hasApplyError ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="text-xs h-7 shrink-0"
+                onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+              >
+                Retry
+              </Button>
             ) : job.status.applied ? (
               <Button
                 size="sm"
                 variant="secondary"
-                className="text-xs h-7"
+                className="text-xs h-7 shrink-0"
                 disabled
               >
                 Applied
@@ -164,7 +170,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
             <Button
               size="sm"
               variant={job.status.resumeGenerated ? "secondary" : "outline"}
-              className={`text-xs h-7 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-green-600" : ""}`}
+              className={`text-xs h-7 shrink-0 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-green-600" : ""}`}
               onClick={(e) => { e.stopPropagation(); onMatchResume(job); }}
               disabled={isMatching || job.status.resumeGenerated}
             >
@@ -176,28 +182,25 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
               ) : job.status.resumeGenerated ? (
                 <>
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
-                  Resume matched
+                  Matched
                 </>
               ) : (
                 <>
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
-                  Match my resume
+                  Match
                 </>
               )}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="text-xs h-7 px-2"
+              className="text-xs h-7 px-2 shrink-0"
               onClick={(e) => { e.stopPropagation(); onEmailHM(job); }}
               disabled={job.status.emailSent}
               title="Email hiring manager"
             >
               {job.status.emailSent ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
-                  Emailed
-                </>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               ) : (
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
               )}
@@ -205,7 +208,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
             <Button
               size="sm"
               variant="ghost"
-              className="text-xs h-7 ml-auto"
+              className="text-xs h-7 ml-auto shrink-0"
               onClick={(e) => { e.stopPropagation(); onViewDetail(job); }}
             >
               Details &rarr;
@@ -220,7 +223,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
 function ApplyDropdown({ job, onApply }: { job: Job; onApply: (jobId: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center gap-0">
+    <div className="flex items-center gap-0 shrink-0">
       <Button
         size="sm"
         variant="default"

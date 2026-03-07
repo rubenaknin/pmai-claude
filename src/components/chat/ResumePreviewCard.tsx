@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,8 @@ export function ResumePreviewCard({
   onApply,
   onEmailHM,
 }: ResumePreviewCardProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
   const displayHighlights = highlights && highlights.length > 0
     ? highlights.slice(0, 4)
     : [
@@ -56,14 +59,44 @@ export function ResumePreviewCard({
   const hasActions = onDownload || onPreviewEdit || onApply || onEmailHM;
   const color = companyColor(company);
 
+  if (collapsed) {
+    return (
+      <Card
+        className="max-w-sm border-border/50 bg-card cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={() => setCollapsed(false)}
+      >
+        <CardContent className="py-2.5 px-4">
+          <div className="flex items-center gap-2.5">
+            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${color} text-white text-xs font-bold`}>
+              {company.charAt(0)}
+            </div>
+            <span className="text-sm text-muted-foreground truncate flex-1">
+              Tailored Resume — {jobTitle} at {company}
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0"><path d="m6 9 6 6 6-6" /></svg>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="max-w-sm border-border/50 bg-card">
       <CardContent className="pt-4 pb-4 px-4">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-semibold">Tailored Resume</h4>
-          <Badge variant="secondary" className="text-xs">
-            Optimized
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary" className="text-xs">
+              Optimized
+            </Badge>
+            <button
+              onClick={() => setCollapsed(true)}
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Collapse"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+            </button>
+          </div>
         </div>
         <div className="space-y-2 text-xs text-muted-foreground">
           {/* Company header with colored initial */}
