@@ -99,16 +99,33 @@ export function ChatInput({
 
   const hasSelection = selectedJobs && selectedJobs.length > 0;
 
-  // When jobs are selected, show selection-specific suggestions
-  const selectionSuggestions = hasSelection
-    ? [
-        `Apply to selected (${selectedJobs.length})`,
-        `Email HMs for selected (${selectedJobs.length})`,
-        `Match resume for selected (${selectedJobs.length})`,
-      ]
+  // When jobs are selected, show selection-specific suggestions with smart emphasis
+  type SuggestionItem = { text: string; primary: boolean };
+  const selectionSuggestions: SuggestionItem[] | null = hasSelection
+    ? (() => {
+        const noResume = selectedJobs.some((j) => !j.status.resumeGenerated);
+        const allResumed = selectedJobs.every((j) => j.status.resumeGenerated);
+        const notAllApplied = selectedJobs.some((j) => !j.status.applied);
+        const allApplied = selectedJobs.every((j) => j.status.applied);
+
+        return [
+          {
+            text: `Match resume for selected (${selectedJobs.length})`,
+            primary: noResume && !allResumed,
+          },
+          {
+            text: `Apply to selected (${selectedJobs.length})`,
+            primary: allResumed && notAllApplied,
+          },
+          {
+            text: `Email HMs for selected (${selectedJobs.length})`,
+            primary: allApplied,
+          },
+        ];
+      })()
     : null;
 
-  const activeSuggestions = selectionSuggestions || suggestions;
+  const activeSuggestions: SuggestionItem[] | string[] | null = selectionSuggestions || suggestions || null;
 
   return (
     <div
@@ -160,16 +177,24 @@ export function ChatInput({
       {/* Suggestions */}
       {activeSuggestions && activeSuggestions.length > 0 && !isDragging && (
         <div className="flex flex-wrap gap-2 mb-3">
-          {activeSuggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              onClick={() => handleSuggestionClick(suggestion)}
-              disabled={disabled}
-              className="rounded-full border border-border/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              {suggestion}
-            </button>
-          ))}
+          {activeSuggestions.map((suggestion) => {
+            const text = typeof suggestion === "string" ? suggestion : suggestion.text;
+            const isPrimary = typeof suggestion === "object" && suggestion.primary;
+            return (
+              <button
+                key={text}
+                onClick={() => handleSuggestionClick(text)}
+                disabled={disabled}
+                className={`rounded-full px-3 py-1.5 text-xs transition-colors disabled:opacity-50 ${
+                  isPrimary
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {text}
+              </button>
+            );
+          })}
         </div>
       )}
 

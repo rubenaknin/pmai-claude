@@ -31,6 +31,7 @@ interface JobCardProps {
   onRemoveJob?: (jobId: string, mode: "single" | "title" | "location") => void;
   onMatchResume?: (job: Job) => void;
   matchingJobIds?: Set<string>;
+  applyErrorJobIds?: Set<string>;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
   compact?: boolean;
@@ -45,6 +46,7 @@ export function JobCard({
   onRemoveJob,
   onMatchResume,
   matchingJobIds,
+  applyErrorJobIds,
   isSelected,
   onToggleSelect,
   compact,
@@ -53,6 +55,7 @@ export function JobCard({
   const initial = job.company.charAt(0);
   const [removeOpen, setRemoveOpen] = useState(false);
   const isMatching = matchingJobIds?.has(job.id) ?? false;
+  const hasApplyError = applyErrorJobIds?.has(job.id) ?? false;
 
   const handleCardClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -188,36 +191,51 @@ export function JobCard({
 
           {/* Actions */}
           <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-            <Button
-              size="sm"
-              variant={job.status.applied ? "secondary" : "default"}
-              className="text-xs h-7"
-              onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-              disabled={job.status.applied}
-            >
-              {job.status.applied ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
-                  Applied
-                </>
-              ) : (
-                "Apply for me"
-              )}
-            </Button>
-            {/* Match my resume — three-state: spinner → green checkmark → normal */}
+            {hasApplyError ? (
+              <div className="flex items-center gap-0">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="text-xs h-7 rounded-r-none"
+                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+                >
+                  Retry apply
+                </Button>
+                <Button
+                  size="sm"
+                  className="text-xs h-7 rounded-l-none border-l border-white/20 bg-orange-500 hover:bg-orange-600 text-white"
+                  onClick={(e) => { e.stopPropagation(); window.open(job._apiData?.url, "_blank"); }}
+                >
+                  Apply myself
+                </Button>
+              </div>
+            ) : job.status.applied ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="text-xs h-7"
+                disabled
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
+                Applied
+              </Button>
+            ) : (
+              <JobCardApplyDropdown job={job} onApply={onApply} />
+            )}
+            {/* Match my resume — three-state: sweep → green checkmark → normal */}
             {onMatchResume && (
               <Button
                 size="sm"
                 variant={job.status.resumeGenerated ? "secondary" : "outline"}
-                className={`text-xs h-7 ${job.status.resumeGenerated ? "text-green-600" : ""}`}
+                className={`text-xs h-7 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-green-600" : ""}`}
                 onClick={(e) => { e.stopPropagation(); onMatchResume(job); }}
                 disabled={isMatching || job.status.resumeGenerated}
               >
                 {isMatching ? (
-                  <span className="flex items-center gap-1">
-                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                    Matching...
-                  </span>
+                  <>
+                    <span className="absolute inset-0 bg-primary/15 animate-[progress-sweep_1.5s_ease-in-out_infinite]" />
+                    <span className="relative z-10 flex items-center gap-1">Matching...</span>
+                  </>
                 ) : job.status.resumeGenerated ? (
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="20 6 9 17 4 12" /></svg>
@@ -225,7 +243,7 @@ export function JobCard({
                   </>
                 ) : (
                   <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
                     Match my resume
                   </>
                 )}
@@ -234,9 +252,10 @@ export function JobCard({
             <Button
               size="sm"
               variant="outline"
-              className="text-xs h-7"
+              className="text-xs h-7 px-2"
               onClick={(e) => { e.stopPropagation(); onEmailHM(job); }}
               disabled={job.status.emailSent}
+              title="Email hiring manager"
             >
               {job.status.emailSent ? (
                 <>
@@ -244,15 +263,54 @@ export function JobCard({
                   Emailed
                 </>
               ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
-                  Email HM
-                </>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
               )}
             </Button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function JobCardApplyDropdown({ job, onApply }: { job: Job; onApply: (jobId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-center gap-0">
+      <Button
+        size="sm"
+        variant="default"
+        className="text-xs h-7 rounded-r-none"
+        onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+      >
+        Apply for me
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            size="sm"
+            variant="default"
+            className="text-xs h-7 px-1.5 rounded-l-none border-l border-primary-foreground/20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-44 p-1.5"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { window.open(job._apiData?.url, "_blank"); setOpen(false); }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            Apply by myself
+          </button>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

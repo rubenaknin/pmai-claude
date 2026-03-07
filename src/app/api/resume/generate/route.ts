@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       html: result.newResumeHTMLBody || "",
       threeExplanations: result.threeExplanations,
       pdfFileName: result.pdfFileName,
+      pdfUrl: result.files?.pdf,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

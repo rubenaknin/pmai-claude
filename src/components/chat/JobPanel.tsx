@@ -33,6 +33,7 @@ interface JobPanelProps {
   onClose: () => void;
   onMatchResume?: (job: Job) => void;
   matchingJobIds?: Set<string>;
+  applyErrorJobIds?: Set<string>;
   selectedJobIds?: Set<string>;
   onToggleSelect?: (jobId: string) => void;
   onSelectAll?: () => void;
@@ -51,6 +52,7 @@ export function JobPanel({
   onClose,
   onMatchResume,
   matchingJobIds,
+  applyErrorJobIds,
   selectedJobIds,
   onToggleSelect,
   onSelectAll,
@@ -320,6 +322,7 @@ export function JobPanel({
               onRemoveJob={onRemoveJob}
               onMatchResume={onMatchResume}
               matchingJobIds={matchingJobIds}
+              applyErrorJobIds={applyErrorJobIds}
               isSelected={selectedJobIds?.has(job.id)}
               onToggleSelect={onToggleSelect}
               compact

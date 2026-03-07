@@ -139,6 +139,7 @@ export function ChatLayout() {
   // Resume preview data
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [matchingJobIds, setMatchingJobIds] = useState<Set<string>>(new Set());
+  const [applyErrorJobIds, setApplyErrorJobIds] = useState<Set<string>>(new Set());
 
   const addMatchingId = useCallback((id: string) => {
     setMatchingJobIds((prev) => new Set(prev).add(id));
@@ -260,6 +261,13 @@ export function ChatLayout() {
       const job = jobs.find((j) => j.id === jobId);
       if (!job || job.status.applied) return;
 
+      // Clear any previous error for this job
+      setApplyErrorJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+
       // Optimistic update
       updateJob(jobId, (j) => ({
         ...j,
@@ -282,10 +290,14 @@ export function ChatLayout() {
             }),
           });
           const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `API error ${res.status}`);
+          }
           if (data.html) {
             setResumeData({
               html: data.html,
               highlights: [],
+              pdfUrl: data.pdfUrl,
               pdfFileName: data.pdfFileName,
               jobTitle: job.title,
               company: job.company,
@@ -297,7 +309,14 @@ export function ChatLayout() {
             }));
           }
         } catch (err) {
-          console.error("Resume generation failed:", err);
+          console.error("Apply/resume generation failed:", err);
+          // Revert optimistic update
+          updateJob(jobId, (j) => ({
+            ...j,
+            status: { ...j.status, applied: false, appliedAt: null },
+          }));
+          // Mark as error
+          setApplyErrorJobIds((prev) => new Set(prev).add(jobId));
         }
       }
     },
@@ -565,6 +584,8 @@ export function ChatLayout() {
       }
       addMatchingId(job.id);
 
+      const MAX_RETRIES = 3;
+
       try {
         const payload = {
           url: job._apiData.url,
@@ -574,36 +595,56 @@ export function ChatLayout() {
           jobDetails: job._apiData.jobDetails || job.description,
           location: job._apiData.location || job.location,
         };
-        const res = await fetch("/api/resume/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
 
-        if (!res.ok) {
-          const errMsg = data.error || `API error ${res.status}`;
-          console.error("Match resume API error:", errMsg, { status: res.status, payload });
-          return { success: false, error: errMsg };
-        }
-
-        if (data.html) {
-          setResumeData({
-            html: data.html,
-            highlights: [],
-            pdfFileName: data.pdfFileName,
-            jobTitle: job.title,
-            company: job.company,
-            threeExplanations: data.threeExplanations,
+        let lastError = "";
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const res = await fetch("/api/resume/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           });
-          updateJob(job.id, (j) => ({
-            ...j,
-            status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
-          }));
-          return { success: true, data };
+
+          // Retry on 420 (resume generation already in progress)
+          if (res.status === 420) {
+            if (attempt < MAX_RETRIES) {
+              const delay = 5000 * (attempt + 1);
+              console.warn(`Match resume 420 for ${job.company}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+              await new Promise((r) => setTimeout(r, delay));
+              continue;
+            }
+            lastError = "Resume generation is busy. Please try again in a moment.";
+            return { success: false, error: lastError };
+          }
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            const errMsg = data.error || `API error ${res.status}`;
+            console.error("Match resume API error:", errMsg, { status: res.status, payload });
+            return { success: false, error: errMsg };
+          }
+
+          if (data.html) {
+            setResumeData({
+              html: data.html,
+              highlights: [],
+              pdfUrl: data.pdfUrl,
+              pdfFileName: data.pdfFileName,
+              jobTitle: job.title,
+              company: job.company,
+              threeExplanations: data.threeExplanations,
+            });
+            updateJob(job.id, (j) => ({
+              ...j,
+              status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
+            }));
+            return { success: true, data };
+          }
+          console.error("Match resume: no HTML in response", data);
+          return { success: false, error: "No resume HTML returned" };
         }
-        console.error("Match resume: no HTML in response", data);
-        return { success: false, error: "No resume HTML returned" };
+
+        return { success: false, error: lastError || "Max retries exceeded" };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : "Unknown error";
         console.error("Match resume failed:", errMsg);
@@ -616,8 +657,10 @@ export function ChatLayout() {
   );
 
   // --- Resume CTA helpers ---
-  const handleDownloadResume = useCallback((pdfFileName?: string) => {
-    if (pdfFileName) {
+  const handleDownloadResume = useCallback((pdfFileName?: string, pdfUrl?: string) => {
+    if (pdfUrl) {
+      window.open(pdfUrl, "_blank");
+    } else if (pdfFileName) {
       window.open(`/api/resume/download/${pdfFileName}`, "_blank");
     }
   }, []);
@@ -639,6 +682,7 @@ export function ChatLayout() {
         const data = result.data as {
           html?: string;
           pdfFileName?: string;
+          pdfUrl?: string;
           threeExplanations?: { summary?: string; keywords_added?: string[]; soft_skills?: string };
         };
         addBotMessage(
@@ -662,7 +706,7 @@ export function ChatLayout() {
                       ].filter(Boolean) as string[]
                     : undefined
                 }
-                onDownload={data.pdfFileName ? () => handleDownloadResume(data.pdfFileName) : undefined}
+                onDownload={(data.pdfFileName || data.pdfUrl) ? () => handleDownloadResume(data.pdfFileName, data.pdfUrl) : undefined}
                 onPreviewEdit={data.html ? () => handlePreviewEditResume(data.html!) : undefined}
                 onApply={() => handleApplySingle(job.id)}
                 onEmailHM={() => handleOpenEmail(job)}
@@ -695,11 +739,16 @@ export function ChatLayout() {
       let successCount = 0;
       let failCount = 0;
 
-      // Process sequentially
-      for (const job of selectedJobs) {
+      // Process sequentially with inter-job delay
+      for (let i = 0; i < selectedJobs.length; i++) {
+        const job = selectedJobs[i];
         const result = await handleMatchResume(job);
         if (result.success) {
           successCount++;
+          // Add 2s delay between successful jobs to avoid rate limiting
+          if (i < selectedJobs.length - 1) {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         } else {
           failCount++;
           // Remove spinner for jobs without api data (handleMatchResume won't call removeMatchingId for those)
@@ -777,7 +826,7 @@ export function ChatLayout() {
             company={firstJob?.company}
             highlights={resumeData?.highlights}
             pdfFileName={resumeData?.pdfFileName}
-            onDownload={resumeData?.pdfFileName ? () => handleDownloadResume(resumeData?.pdfFileName) : undefined}
+            onDownload={(resumeData?.pdfFileName || resumeData?.pdfUrl) ? () => handleDownloadResume(resumeData?.pdfFileName, resumeData?.pdfUrl) : undefined}
             onPreviewEdit={resumeData?.html ? () => handlePreviewEditResume(resumeData!.html) : undefined}
             onApply={firstJob ? () => handleApplySingle(firstJob.id) : undefined}
             onEmailHM={firstJob ? () => handleOpenEmail(firstJob) : undefined}
@@ -1025,6 +1074,7 @@ export function ChatLayout() {
                       onViewDetail={handleViewDetail}
                       onMatchResume={handleMatchResumeSingle}
                       matchingJobIds={matchingJobIds}
+                      applyErrorJobIds={applyErrorJobIds}
                     />
                   ),
                 }, debugInfo);
@@ -1055,7 +1105,7 @@ export function ChatLayout() {
                     company={resume.company}
                     highlights={resume.highlights}
                     pdfFileName={resume.pdfFileName}
-                    onDownload={resume.pdfFileName ? () => handleDownloadResume(resume.pdfFileName) : undefined}
+                    onDownload={(resume.pdfFileName || resume.pdfUrl) ? () => handleDownloadResume(resume.pdfFileName, resume.pdfUrl) : undefined}
                     onPreviewEdit={resume.html ? () => handlePreviewEditResume(resume.html) : undefined}
                     onApply={matchJob ? () => handleApplySingle(matchJob.id) : undefined}
                     onEmailHM={matchJob ? () => handleOpenEmail(matchJob) : undefined}
@@ -1433,6 +1483,7 @@ export function ChatLayout() {
           onClose={() => setShowJobPanel(false)}
           onMatchResume={handleMatchResumeSingle}
           matchingJobIds={matchingJobIds}
+          applyErrorJobIds={applyErrorJobIds}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}
           onSelectAll={selectAllJobs}
