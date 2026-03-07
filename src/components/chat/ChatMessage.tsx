@@ -60,9 +60,10 @@ interface ChatMessageProps {
   message: Message;
   liveCustomComponent?: ReactNode;
   onLoadJobsSnapshot?: (jobs: Job[], totalJobs: number) => void;
+  onStop?: () => void;
 }
 
-export function ChatMessage({ message, liveCustomComponent, onLoadJobsSnapshot }: ChatMessageProps) {
+export function ChatMessage({ message, liveCustomComponent, onLoadJobsSnapshot, onStop }: ChatMessageProps) {
   // Action log messages — subtle centered line
   if (message.role === "action") {
     // Show animated dots for in-progress actions (present participle verbs)
@@ -96,13 +97,22 @@ export function ChatMessage({ message, liveCustomComponent, onLoadJobsSnapshot }
       >
         {(message.content || message.isTyping) && (
           <div
-            className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+            className={`relative rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
               isBot
                 ? "bg-muted text-foreground rounded-tl-sm"
                 : "bg-primary text-primary-foreground rounded-tr-sm"
             }`}
           >
             {message.isTyping ? <TypingIndicator /> : renderInlineBold(message.content)}
+            {isBot && onStop && message.content.includes("then I'll auto-apply") && (
+              <button
+                onClick={onStop}
+                className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-sm"
+                title="Stop"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+              </button>
+            )}
           </div>
         )}
         {liveCustomComponent || message.customComponent}

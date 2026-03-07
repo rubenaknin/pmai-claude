@@ -151,6 +151,7 @@ export function ChatLayout() {
   const [applyRetriedJobIds, setApplyRetriedJobIds] = useState<Set<string>>(new Set());
   const [selfApplyJobIds, setSelfApplyJobIds] = useState<Set<string>>(new Set());
   const [emailGeneratedJobIds, setEmailGeneratedJobIds] = useState<Set<string>>(new Set());
+  const [highlightJobIds, setHighlightJobIds] = useState<Set<string>>(new Set());
   const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
   const resumeHtmlCache = useRef<Map<string, string>>(new Map());
   const emailDataCache = useRef<Map<string, EmailData>>(new Map());
@@ -451,6 +452,7 @@ export function ChatLayout() {
             addBotMessage(
               `Auto-apply to **${job.title}** at **${job.company}** is currently unavailable. You can retry or apply manually on their website.`
             );
+            setSuggestions(["Find more jobs", "Help me prep for interviews"]);
           }
         } finally {
           removeApplyingId(jobId);
@@ -990,31 +992,43 @@ export function ChatLayout() {
     async (selectedJobs: Job[]) => {
       if (selectedJobs.length === 0) return;
 
+      // Skip jobs that already have resumes
+      const jobsToMatch = selectedJobs.filter(j => !j.status.resumeGenerated);
+      const skippedCount = selectedJobs.length - jobsToMatch.length;
+
+      if (jobsToMatch.length === 0) {
+        addBotMessage(`All ${selectedJobs.length} job${selectedJobs.length !== 1 ? "s" : ""} already have matched resumes.`);
+        setSuggestions(["Yes, generate intro emails", "Find more jobs"]);
+        return;
+      }
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
       setIsProcessing(true);
 
-      // Show spinners on all at once
-      for (const job of selectedJobs) {
+      // Show spinners only on jobs that need matching
+      for (const job of jobsToMatch) {
         addMatchingId(job.id);
       }
 
       const matchStatusMsgId = addActionMessage(
-        `Matching your resume for ${selectedJobs.length} selected job${selectedJobs.length !== 1 ? "s" : ""}`
+        `Matching your resume for ${jobsToMatch.length} selected job${jobsToMatch.length !== 1 ? "s" : ""}${skippedCount > 0 ? ` (${skippedCount} already had resumes)` : ""}`
       );
 
       let successCount = 0;
       let failCount = 0;
+      const matchedJobIds: string[] = [];
 
       // Process sequentially with inter-job delay
-      for (let i = 0; i < selectedJobs.length; i++) {
+      for (let i = 0; i < jobsToMatch.length; i++) {
         if (controller.signal.aborted) break;
-        const job = selectedJobs[i];
+        const job = jobsToMatch[i];
         const result = await handleMatchResume(job);
         if (result.success) {
           successCount++;
+          matchedJobIds.push(job.id);
           // Add 2s delay between successful jobs to avoid rate limiting
-          if (i < selectedJobs.length - 1) {
+          if (i < jobsToMatch.length - 1) {
             await new Promise((r) => setTimeout(r, 2000));
           }
         } else {
@@ -1029,16 +1043,31 @@ export function ChatLayout() {
 
       // Post summary
       if (controller.signal.aborted) return;
+
+      const skippedNote = skippedCount > 0 ? ` (${skippedCount} already had resumes)` : "";
+
       if (failCount === 0) {
-        updateActionMessage(matchStatusMsgId, `Matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}`);
+        updateActionMessage(matchStatusMsgId, `Matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}${skippedNote}`);
+        // Collect matched jobs for the "Show jobs" snapshot
+        const matchedJobs = selectedJobs.filter(j => matchedJobIds.includes(j.id) || j.status.resumeGenerated);
         addBotMessage(
-          `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.`
+          `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.${skippedNote}`,
+          { jobsSnapshot: { jobs: matchedJobs, totalJobs: matchedJobs.length } }
         );
+        setSuggestions(["Yes, generate intro emails", "Find more jobs"]);
       } else {
-        updateActionMessage(matchStatusMsgId, `Matched ${successCount} of ${selectedJobs.length} job${selectedJobs.length !== 1 ? "s" : ""}`);
+        updateActionMessage(matchStatusMsgId, `Matched ${successCount} of ${jobsToMatch.length} job${jobsToMatch.length !== 1 ? "s" : ""}${skippedNote}`);
         addBotMessage(
-          `Finished: ${successCount} matched successfully, ${failCount} failed. You can retry the failed ones individually.`
+          `Finished: ${successCount} matched successfully, ${failCount} failed.${skippedNote} You can retry the failed ones individually.`
         );
+        setSuggestions(["Find more jobs", "Help me prep for interviews"]);
+      }
+
+      // Open sidebar and highlight matched jobs
+      setShowJobPanel(true);
+      if (matchedJobIds.length > 0) {
+        setHighlightJobIds(new Set(matchedJobIds));
+        setTimeout(() => setHighlightJobIds(new Set()), 3000);
       }
     },
     [addMatchingId, removeMatchingId, handleMatchResume, addBotMessage, addActionMessage, updateActionMessage]
@@ -2031,6 +2060,7 @@ export function ChatLayout() {
                 message={msg}
                 liveCustomComponent={msg.customComponentMeta ? renderLiveComponent(msg.customComponentMeta) : undefined}
                 onLoadJobsSnapshot={handleLoadJobsSnapshot}
+                onStop={handleStop}
               />
             ))}
             {isTyping && (
@@ -2083,6 +2113,7 @@ export function ChatLayout() {
           onToggleSelect={toggleJobSelection}
           onSelectAll={selectAllJobs}
           onClearSelection={clearSelection}
+          highlightJobIds={highlightJobIds}
         />
       )}
 

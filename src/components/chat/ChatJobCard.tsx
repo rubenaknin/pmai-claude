@@ -168,14 +168,7 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
                   Apply manually
                 </Button>
               ) : (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="text-xs h-7 shrink-0 text-muted-foreground"
-                  onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
-                >
-                  Retry
-                </Button>
+                <RetryDropdown job={job} onApply={onApply} onSelfApply={onSelfApply} />
               )
             ) : job.status.applied ? (
               <Button
@@ -260,6 +253,48 @@ export function ChatJobCard({ job, onApply, onEmailHM, onViewDetail, onMatchResu
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RetryDropdown({ job, onApply, onSelfApply }: { job: Job; onApply: (jobId: string) => void; onSelfApply?: (jobId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-center gap-0 shrink-0">
+      <Button
+        size="sm"
+        variant="secondary"
+        className="text-xs h-7 rounded-r-none text-muted-foreground"
+        onClick={(e) => { e.stopPropagation(); onApply(job.id); }}
+      >
+        Retry
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="text-xs h-7 px-1.5 rounded-l-none border-l border-border/50 text-muted-foreground"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-44 p-1.5"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { onSelfApply?.(job.id); setOpen(false); }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-muted transition-colors text-left"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            Apply by myself
+          </button>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

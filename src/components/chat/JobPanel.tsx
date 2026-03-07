@@ -47,6 +47,7 @@ interface JobPanelProps {
   onToggleSelect?: (jobId: string) => void;
   onSelectAll?: () => void;
   onClearSelection?: () => void;
+  highlightJobIds?: Set<string>;
 }
 
 export function JobPanel({
@@ -75,6 +76,7 @@ export function JobPanel({
   onToggleSelect,
   onSelectAll,
   onClearSelection,
+  highlightJobIds,
 }: JobPanelProps) {
   const [sort, setSort] = useState<SortOption>("relevance");
   const [activeFilters, setActiveFilters] = useState<Set<FilterOption>>(new Set());
@@ -353,6 +355,7 @@ export function JobPanel({
               isSelected={selectedJobIds?.has(job.id)}
               onToggleSelect={onToggleSelect}
               compact
+              highlightJobIds={highlightJobIds}
             />
           ))}
           {totalJobs > jobs.length && (
