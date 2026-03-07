@@ -647,6 +647,10 @@ export function ChatLayout() {
             };
             emailDataCache.current.set(job.id, ed);
             setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
+            // Auto-open the email composer
+            setEmailJob(job);
+            setEmailData(ed);
+            setEmailLoading(false);
             // Highlight the card briefly
             setHighlightJobIds(new Set([job.id]));
             setTimeout(() => setHighlightJobIds(new Set()), 2000);
@@ -970,12 +974,12 @@ export function ChatLayout() {
         );
         setSuggestions([
           `Just ${job.company}`,
-          `Match resume for selected (${selectedJobIds.size})`,
+          `Generate resume for the ${selectedJobIds.size} selected`,
         ]);
         return { success: false, error: "Pending user clarification" };
       }
 
-      addActionMessage(`Matching resume for ${job.title} at ${job.company}`);
+      addActionMessage(`Generating resume for ${job.title} at ${job.company}`);
       const result = await handleMatchResume(job);
       if (result.success) {
         // Highlight the card
@@ -1088,7 +1092,7 @@ export function ChatLayout() {
       }
 
       const matchStatusMsgId = addActionMessage(
-        `Matching your resume for ${jobsToMatch.length} selected job${jobsToMatch.length !== 1 ? "s" : ""}${skippedCount > 0 ? ` (${skippedCount} already had resumes)` : ""}`
+        `Generating resume for ${jobsToMatch.length} selected job${jobsToMatch.length !== 1 ? "s" : ""}${skippedCount > 0 ? ` (${skippedCount} already had resumes)` : ""}`
       );
 
       let successCount = 0;
@@ -1123,18 +1127,18 @@ export function ChatLayout() {
       const skippedNote = skippedCount > 0 ? ` (${skippedCount} already had resumes)` : "";
 
       if (failCount === 0) {
-        updateActionMessage(matchStatusMsgId, `Matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}${skippedNote}`);
+        updateActionMessage(matchStatusMsgId, `Generated resume for ${successCount} job${successCount !== 1 ? "s" : ""}${skippedNote}`);
         // Collect matched jobs for the "Show jobs" snapshot
         const matchedJobs = selectedJobs.filter(j => matchedJobIds.includes(j.id) || j.status.resumeGenerated);
         addBotMessage(
-          `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.${skippedNote}`,
+          `All done! Successfully generated resumes for ${successCount} job${successCount !== 1 ? "s" : ""}.${skippedNote}`,
           { jobsSnapshot: { jobs: matchedJobs, totalJobs: matchedJobs.length } }
         );
         setSuggestions(["Yes, generate intro emails", "Find more jobs"]);
       } else {
-        updateActionMessage(matchStatusMsgId, `Matched ${successCount} of ${jobsToMatch.length} job${jobsToMatch.length !== 1 ? "s" : ""}${skippedNote}`);
+        updateActionMessage(matchStatusMsgId, `Generated ${successCount} of ${jobsToMatch.length} resume${jobsToMatch.length !== 1 ? "s" : ""}${skippedNote}`);
         addBotMessage(
-          `Finished: ${successCount} matched successfully, ${failCount} failed.${skippedNote} You can retry the failed ones individually.`
+          `Finished: ${successCount} generated successfully, ${failCount} failed.${skippedNote} You can retry the failed ones individually.`
         );
         setSuggestions(["Find more jobs", "Help me prep for interviews"]);
       }
@@ -1561,35 +1565,19 @@ export function ChatLayout() {
       }
 
       // Selection-based actions
-      if (lower.includes("apply to selected") || lower.includes("apply for selected")) {
+      if (lower.includes("apply to selected") || lower.includes("apply for selected") || lower.includes("apply to the")) {
         if (selectedJobs.length > 0) {
           setIsTyping(false);
-          const targetJobs = selectedJobs.filter((j) => !j.status.applied);
-          setJobs((prev) =>
-            prev.map((j) =>
-              selectedJobIds.has(j.id)
-                ? { ...j, status: { ...j.status, applied: true, appliedAt: "just now" } }
-                : j
-            )
-          );
-          clearSelection();
-          addBotMessage(
-            `Applying to ${targetJobs.length} selected job${targetJobs.length !== 1 ? "s" : ""}... I'm tailoring your resume for each position.`
-          );
-          addBotMessage(
-            `Done! I've submitted ${targetJobs.length} tailored applications.`,
-            { customComponentMeta: { type: "applicationStatusCard", jobIds: targetJobs.map(j => j.id), totalJobs: targetJobs.length } }
-          );
           setChatHistory((prev) => [
             ...prev,
             { role: "user", content },
-            { role: "assistant", content: `[Action: bulk_apply(${targetJobs.length} selected jobs)]` },
+            { role: "assistant", content: `[Action: bulk_apply(${selectedJobs.length} selected jobs)]` },
           ]);
-          setSuggestions(["Yes, generate intro emails", "Find more jobs"]);
+          await handleApplyAll();
           return;
         }
       }
-      if (lower.includes("email hms for selected") || lower.includes("email hiring managers for selected")) {
+      if (lower.includes("email hms for selected") || lower.includes("email hiring managers for selected") || lower.includes("generate intro emails for the")) {
         if (selectedJobs.length > 0) {
           setIsTyping(false);
           const count = selectedJobs.length;
@@ -1615,7 +1603,7 @@ export function ChatLayout() {
           return;
         }
       }
-      if (lower.includes("match resume for selected")) {
+      if (lower.includes("match resume for selected") || lower.includes("generate resume for the")) {
         if (selectedJobs.length > 0) {
           setIsTyping(false);
           const snapshot = [...selectedJobs];
@@ -1710,7 +1698,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = data.data.totalJobs || incomingJobs.length;
+              const incomingTotal = Math.max(data.data.totalJobs || 0, incomingJobs.length);
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
@@ -1719,14 +1707,14 @@ export function ChatLayout() {
 
               if (incomingJobs.length <= 5) {
                 // Inline rich job cards in chat — short message
-                const shortMsg = `I found ${incomingTotal} matching job${incomingTotal !== 1 ? "s" : ""} for you. Here are the top results:`;
+                const shortMsg = `I found ${incomingJobs.length} matching job${incomingJobs.length !== 1 ? "s" : ""} for you. Here are the top results:`;
                 addBotMessage(shortMsg, {
                   jobsSnapshot: snapshot,
-                  customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingTotal },
+                  customComponentMeta: { type: "chatJobCards", jobIds: incomingJobs.map(j => j.id), totalJobs: incomingJobs.length },
                 }, debugInfo);
               } else {
                 // >5 jobs: short text only, jobs visible in right panel
-                const shortMsg = `I found ${incomingTotal} matching jobs for you. Browse them in the panel on the right.`;
+                const shortMsg = `I found ${incomingJobs.length} matching jobs for you. Browse them in the panel on the right.`;
                 addBotMessage(shortMsg, { jobsSnapshot: snapshot }, debugInfo);
               }
             } else {
@@ -1907,7 +1895,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = data.data.totalJobs || incomingJobs.length;
+              const incomingTotal = Math.max(data.data.totalJobs || 0, incomingJobs.length);
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
@@ -2272,6 +2260,7 @@ export function ChatLayout() {
         onApply={handleApplySingle}
         onEmailHM={handleOpenEmail}
         onSave={handleSave}
+        onMatchResume={handleMatchResumeSingle}
       />
 
       {/* Email composer dialog */}

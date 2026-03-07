@@ -47,12 +47,12 @@ export function ChatJobCards({
   highlightJobIds,
 }: ChatJobCardsProps) {
   const displayed = jobs.slice(0, 5);
-  const remaining = totalJobs - displayed.length;
+  const remaining = jobs.length - displayed.length;
 
   return (
     <div className="w-full space-y-2">
       <p className="text-xs text-muted-foreground">
-        Top {displayed.length} of {totalJobs} matches
+        Top {displayed.length} of {jobs.length} matches
       </p>
       <div className="space-y-2">
         {displayed.map((job) => (

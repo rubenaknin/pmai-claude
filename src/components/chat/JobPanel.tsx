@@ -186,18 +186,6 @@ export function JobPanel({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              className="text-xs h-7"
-              onClick={onApplyAll}
-              disabled={allApplied}
-            >
-              {allApplied
-                ? "All Applied"
-                : hasSelection
-                ? `Apply selected (${selectionCount})`
-                : "Apply for all"}
-            </Button>
             <button
               onClick={onClose}
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"

@@ -30,6 +30,7 @@ interface JobDetailSheetProps {
   onApply: (jobId: string) => void;
   onEmailHM: (job: Job) => void;
   onSave: (jobId: string) => void;
+  onMatchResume?: (job: Job) => void;
 }
 
 export function JobDetailSheet({
@@ -39,6 +40,7 @@ export function JobDetailSheet({
   onApply,
   onEmailHM,
   onSave,
+  onMatchResume,
 }: JobDetailSheetProps) {
   if (!job) return null;
   const logoColor = LOGO_COLORS[job.company] || "bg-gray-600";
@@ -80,7 +82,7 @@ export function JobDetailSheet({
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() => onApply(job.id)}
+              onClick={() => { onApply(job.id); onClose(); }}
               disabled={job.status.applied}
               className="text-xs h-8"
             >
@@ -93,6 +95,27 @@ export function JobDetailSheet({
                 "Apply for me"
               )}
             </Button>
+            {onMatchResume && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { onMatchResume(job); onClose(); }}
+                disabled={job.status.resumeGenerated}
+                className="text-xs h-8"
+              >
+                {job.status.resumeGenerated ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    Resume
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M15 4V2" /><path d="M15 16v-2" /><path d="M8 9h2" /><path d="M20 9h2" /><path d="M17.8 11.8 19 13" /><path d="M15 9h.01" /><path d="M17.8 6.2 19 5" /><path d="m3 21 9-9" /><path d="M12.2 6.2 11 5" /></svg>
+                    Generate Resume
+                  </>
+                )}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -108,7 +131,7 @@ export function JobDetailSheet({
               ) : (
                 <>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
-                  Email {job.status.hiringManagerName || "HM"}
+                  Intro Email
                 </>
               )}
             </Button>
