@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 interface ApplicationStatusCardProps {
   jobCount?: number;
   emailsSent?: boolean;
+  resumesTailored?: boolean;
   successCount?: number;
   failCount?: number;
   onShowJobs?: () => void;
@@ -17,6 +18,7 @@ interface ApplicationStatusCardProps {
 export function ApplicationStatusCard({
   jobCount = 5,
   emailsSent = false,
+  resumesTailored,
   successCount,
   failCount,
   onShowJobs,
@@ -27,66 +29,68 @@ export function ApplicationStatusCard({
   const displayFail = failCount ?? 0;
 
   return (
-    <Card className="max-w-sm border-border/50 bg-card">
+    <Card className="max-w-md border-border/50 bg-card">
       <CardContent className="pt-4 pb-4 px-4">
         <h4 className="text-sm font-semibold mb-3">Application Summary</h4>
         <div className="space-y-3">
-          {/* 1) Resumes Tailored */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-green-500" />
-              <span className="text-sm">Resumes Tailored per Job</span>
+          {/* 1) Resumes Tailored — only show if actually tailored */}
+          {resumesTailored && (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                <span className="text-sm truncate">Resumes Tailored per Job</span>
+              </div>
+              <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs shrink-0">
+                Done
+              </Badge>
             </div>
-            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
-              Done
-            </Badge>
-          </div>
+          )}
           {/* 2) Applications Submitted */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-green-500" />
-              <span className="text-sm">
-                {displaySuccess} Applications Submitted
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+              <span className="text-sm truncate">
+                {displaySuccess} Application{displaySuccess !== 1 ? "s" : ""} Submitted
               </span>
             </div>
-            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
+            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs shrink-0">
               Done
             </Badge>
           </div>
           {/* 3) Failed (conditional) */}
           {displayFail > 0 && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-red-500" />
-                <span className="text-sm text-red-600">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                <span className="text-sm text-red-600 truncate">
                   {displayFail} Failed
                 </span>
               </div>
-              <Badge variant="destructive" className="text-xs">
+              <Badge variant="destructive" className="text-xs shrink-0">
                 Error
               </Badge>
             </div>
           )}
           {/* 4) Email section */}
           {emailsSent ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-sm">Intro Emails Sent</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                <span className="text-sm truncate">Intro Emails Sent</span>
               </div>
-              <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs">
+              <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 text-xs shrink-0">
                 Sent
               </Badge>
             </div>
           ) : (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-                <span className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-2 w-2 rounded-full bg-muted-foreground/50 shrink-0" />
+                <span className="text-sm text-muted-foreground truncate">
                   Intro Emails to Hiring Managers
                 </span>
               </div>
-              <Badge variant="outline" className="text-xs text-muted-foreground">
+              <Badge variant="outline" className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
                 Not Done Yet
               </Badge>
             </div>

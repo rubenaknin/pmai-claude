@@ -1296,6 +1296,7 @@ export function ChatLayout() {
         : `Finished: ${successCount} applied successfully, ${failCount} failed. You can retry the failed ones individually.`,
       {
         customComponentMeta: { type: "applicationStatusCard", jobIds: targetJobs.map(j => j.id), totalJobs: count },
+        jobsSnapshot: { jobs: targetJobs, totalJobs: count },
       }
     );
     addBotMessage(
@@ -1983,7 +1984,7 @@ export function ChatLayout() {
 
   // --- Render live component from metadata using current state ---
   const renderLiveComponent = useCallback(
-    (meta: NonNullable<Message["customComponentMeta"]>): React.ReactNode => {
+    (meta: NonNullable<Message["customComponentMeta"]>, message?: Message): React.ReactNode => {
       if (meta.type === "chatJobCards") {
         const liveJobs = meta.jobIds.map(id => jobs.find(j => j.id === id)).filter(Boolean) as Job[];
         return (
@@ -2011,14 +2012,20 @@ export function ChatLayout() {
         );
       }
       if (meta.type === "applicationStatusCard") {
-        const liveJobs = meta.jobIds.map(id => jobs.find(j => j.id === id)).filter(Boolean) as Job[];
+        // Try to get live job state; fall back to snapshot from the message
+        let liveJobs = meta.jobIds.map(id => jobs.find(j => j.id === id)).filter(Boolean) as Job[];
+        if (liveJobs.length === 0 && message?.jobsSnapshot) {
+          liveJobs = message.jobsSnapshot.jobs;
+        }
         const successCount = liveJobs.filter(j => j.status.applied).length;
         const emailsSent = liveJobs.length > 0 && liveJobs.every(j => j.status.emailSent);
+        const resumesTailored = liveJobs.length > 0 && liveJobs.some(j => j.status.resumeGenerated);
         return (
           <ApplicationStatusCard
             jobCount={meta.totalJobs}
             successCount={successCount}
             emailsSent={emailsSent}
+            resumesTailored={resumesTailored}
             jobsSnapshot={{ jobs: liveJobs, totalJobs: meta.totalJobs }}
             onLoadJobsSnapshot={handleLoadJobsSnapshot}
           />
@@ -2227,7 +2234,7 @@ export function ChatLayout() {
               <ChatMessage
                 key={msg.id}
                 message={msg}
-                liveCustomComponent={msg.customComponentMeta ? renderLiveComponent(msg.customComponentMeta) : undefined}
+                liveCustomComponent={msg.customComponentMeta ? renderLiveComponent(msg.customComponentMeta, msg) : undefined}
                 onLoadJobsSnapshot={handleLoadJobsSnapshot}
                 onStop={handleStop}
                 botName={botName}
