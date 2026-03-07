@@ -42,6 +42,7 @@ interface JobPanelProps {
   onSelfApply?: (jobId: string) => void;
   onConfirmSelfApply?: (jobId: string) => void;
   emailGeneratedJobIds?: Set<string>;
+  emailGeneratingJobIds?: Set<string>;
   onSeeEmail?: (job: Job) => void;
   selectedJobIds?: Set<string>;
   onToggleSelect?: (jobId: string) => void;
@@ -71,6 +72,7 @@ export function JobPanel({
   onSelfApply,
   onConfirmSelfApply,
   emailGeneratedJobIds,
+  emailGeneratingJobIds,
   onSeeEmail,
   selectedJobIds,
   onToggleSelect,
@@ -351,6 +353,7 @@ export function JobPanel({
               onSelfApply={onSelfApply}
               onConfirmSelfApply={onConfirmSelfApply}
               emailGeneratedJobIds={emailGeneratedJobIds}
+              emailGeneratingJobIds={emailGeneratingJobIds}
               onSeeEmail={onSeeEmail}
               isSelected={selectedJobIds?.has(job.id)}
               onToggleSelect={onToggleSelect}

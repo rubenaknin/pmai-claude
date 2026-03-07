@@ -151,6 +151,7 @@ export function ChatLayout() {
   const [applyRetriedJobIds, setApplyRetriedJobIds] = useState<Set<string>>(new Set());
   const [selfApplyJobIds, setSelfApplyJobIds] = useState<Set<string>>(new Set());
   const [emailGeneratedJobIds, setEmailGeneratedJobIds] = useState<Set<string>>(new Set());
+  const [emailGeneratingJobIds, setEmailGeneratingJobIds] = useState<Set<string>>(new Set());
   const [highlightJobIds, setHighlightJobIds] = useState<Set<string>>(new Set());
   const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
   const resumeHtmlCache = useRef<Map<string, string>>(new Map());
@@ -174,6 +175,18 @@ export function ChatLayout() {
 
   const removeMatchingId = useCallback((id: string) => {
     setMatchingJobIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const addEmailGeneratingId = useCallback((id: string) => {
+    setEmailGeneratingJobIds((prev) => new Set(prev).add(id));
+  }, []);
+
+  const removeEmailGeneratingId = useCallback((id: string) => {
+    setEmailGeneratingJobIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
@@ -416,6 +429,9 @@ export function ChatLayout() {
             status: { ...j.status, applied: true, appliedAt: "just now" },
           }));
           updateActionMessage(actionMsgId, `Auto-applied to ${job.title} at ${job.company}`);
+          // Highlight the card
+          setHighlightJobIds(new Set([jobId]));
+          setTimeout(() => setHighlightJobIds(new Set()), 2000);
           if (data.html) {
             resumeHtmlCache.current.set(jobId, data.html);
             setResumeData({
@@ -581,9 +597,9 @@ export function ChatLayout() {
     [addActionMessage]
   );
 
-  const handleGenerateEmailInline = useCallback(
+  const handleGenerateEmailSingle = useCallback(
     async (job: Job) => {
-      const actionMsgId = addActionMessage(`Drafting intro email for ${job.title} at ${job.company}`);
+      addEmailGeneratingId(job.id);
 
       if (job._apiData?.jobId) {
         try {
@@ -610,25 +626,20 @@ export function ChatLayout() {
             };
             emailDataCache.current.set(job.id, ed);
             setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
-            updateActionMessage(actionMsgId, `Drafted intro email for ${job.title} at ${job.company}`);
-            addBotMessage(
-              `I've drafted a personalized intro email for **${job.company}**. Click **See email** on the job card to review and send it.`
-            );
-            // Open sidebar and highlight the card
-            setShowJobPanel(true);
+            // Highlight the card briefly
             setHighlightJobIds(new Set([job.id]));
-            setTimeout(() => setHighlightJobIds(new Set()), 3000);
-          } else {
-            addBotMessage(`Sorry, I couldn't generate the email for **${job.company}**. Try again later.`);
+            setTimeout(() => setHighlightJobIds(new Set()), 2000);
           }
         } catch (err) {
           console.error("Email generation failed:", err);
-          addBotMessage(`Sorry, I couldn't generate the email for **${job.company}**. Try again later.`);
+        } finally {
+          removeEmailGeneratingId(job.id);
         }
+      } else {
+        removeEmailGeneratingId(job.id);
       }
-      setSuggestions(["Find more jobs", "Help me prep for interviews"]);
     },
-    [addActionMessage, updateActionMessage, addBotMessage]
+    [addEmailGeneratingId, removeEmailGeneratingId]
   );
 
   const handleSeeEmail = useCallback(
@@ -706,19 +717,8 @@ export function ChatLayout() {
   // --- Load jobs snapshot (from "Show jobs" button in chat) ---
   // Merges snapshot with current job statuses so applied/email/resume state isn't lost
   const handleLoadJobsSnapshot = useCallback(
-    (snapshotJobs: Job[], snapshotTotal: number) => {
-      setJobs((currentJobs) => {
-        const currentMap = new Map(currentJobs.map((j) => [j.id, j]));
-        return snapshotJobs.map((sj) => {
-          const current = currentMap.get(sj.id);
-          if (current) {
-            // Preserve the latest status from current state
-            return { ...sj, status: { ...sj.status, ...current.status } };
-          }
-          return sj;
-        });
-      });
-      setTotalJobs(snapshotTotal);
+    (_snapshotJobs: Job[], _snapshotTotal: number) => {
+      // Just open the sidebar panel — the matched jobs are already in the jobs array.
       setShowJobPanel(true);
     },
     []
@@ -956,6 +956,11 @@ export function ChatLayout() {
 
       addActionMessage(`Matching resume for ${job.title} at ${job.company}`);
       const result = await handleMatchResume(job);
+      if (result.success) {
+        // Highlight the card
+        setHighlightJobIds(new Set([job.id]));
+        setTimeout(() => setHighlightJobIds(new Set()), 2000);
+      }
       if (result.success && result.data) {
         const data = result.data as {
           html?: string;
@@ -1280,10 +1285,16 @@ export function ChatLayout() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Show spinners on all eligible jobs
+    for (const job of eligibleJobs) {
+      addEmailGeneratingId(job.id);
+    }
+
     const statusMsgId = addActionMessage(`Generating intro emails for ${count} hiring manager${count !== 1 ? "s" : ""}`);
 
     let successCount = 0;
     let failCount = 0;
+    const generatedIds: string[] = [];
 
     for (let i = 0; i < eligibleJobs.length; i++) {
       if (controller.signal.aborted) break;
@@ -1315,6 +1326,7 @@ export function ChatLayout() {
           emailDataCache.current.set(job.id, ed);
           setEmailGeneratedJobIds((prev) => new Set(prev).add(job.id));
           successCount++;
+          generatedIds.push(job.id);
           // Delay between requests to avoid rate limiting
           if (i < eligibleJobs.length - 1) {
             await new Promise((r) => setTimeout(r, 1500));
@@ -1326,6 +1338,8 @@ export function ChatLayout() {
         if ((err as Error).name === "AbortError") break;
         console.error("Email generation failed:", err);
         failCount++;
+      } finally {
+        removeEmailGeneratingId(job.id);
       }
     }
 
@@ -1350,14 +1364,13 @@ export function ChatLayout() {
 
     // Open sidebar and highlight email-generated cards
     setShowJobPanel(true);
-    const generatedIds = eligibleJobs.filter(j => emailDataCache.current.has(j.id)).map(j => j.id);
     if (generatedIds.length > 0) {
       setHighlightJobIds(new Set(generatedIds));
       setTimeout(() => setHighlightJobIds(new Set()), 3000);
     }
 
     setSuggestions(["Find more jobs", "Help me prep for interviews"]);
-  }, [addBotMessage, addActionMessage, updateActionMessage, jobs]);
+  }, [addBotMessage, addActionMessage, updateActionMessage, addEmailGeneratingId, removeEmailGeneratingId, jobs]);
 
   // --- Mark all emails as sent (after review) ---
   const handleEmailAll = useCallback(async () => {
@@ -1481,7 +1494,11 @@ export function ChatLayout() {
           { role: "user", content },
           { role: "assistant", content: `[Action: email_hm(${targetJob.title} at ${targetJob.company})]` },
         ]);
-        await handleGenerateEmailInline(targetJob);
+        await handleGenerateEmailSingle(targetJob);
+        addBotMessage(
+          `I've drafted a personalized intro email for **${targetJob.company}**. Click **See email** on the job card to review and send it.`
+        );
+        setSuggestions(["Find more jobs", "Help me prep for interviews"]);
         return;
       }
       if (lastAppliedJobRef.current && lower.includes("no thanks")) {
@@ -1797,7 +1814,7 @@ export function ChatLayout() {
       handleSave,
       handleViewDetail,
       handleOpenEmail,
-      handleGenerateEmailInline,
+      handleGenerateEmailSingle,
       handleRemoveJob,
       handleMatchResumeForSelected,
       handleMatchResumeSingle,
@@ -1925,7 +1942,7 @@ export function ChatLayout() {
             jobs={liveJobs}
             totalJobs={meta.totalJobs}
             onApply={handleApplySingle}
-            onEmailHM={handleOpenEmail}
+            onEmailHM={handleGenerateEmailSingle}
             onViewDetail={handleViewDetail}
             onMatchResume={handleMatchResumeSingle}
             onViewResume={handleViewResume}
@@ -1938,7 +1955,9 @@ export function ChatLayout() {
             onSelfApply={handleSelfApply}
             onConfirmSelfApply={handleConfirmSelfApply}
             emailGeneratedJobIds={emailGeneratedJobIds}
+            emailGeneratingJobIds={emailGeneratingJobIds}
             onSeeEmail={handleSeeEmail}
+            highlightJobIds={highlightJobIds}
           />
         );
       }
@@ -1958,7 +1977,7 @@ export function ChatLayout() {
       }
       return null;
     },
-    [jobs, matchingJobIds, applyErrorJobIds, applyingJobIds, applyRetriedJobIds, selfApplyJobIds, emailGeneratedJobIds, handleApplySingle, handleOpenEmail, handleViewDetail, handleMatchResumeSingle, handleViewResume, handleCancelApply, handleSelfApply, handleConfirmSelfApply, handleSeeEmail, handleLoadJobsSnapshot]
+    [jobs, matchingJobIds, applyErrorJobIds, applyingJobIds, applyRetriedJobIds, selfApplyJobIds, emailGeneratedJobIds, emailGeneratingJobIds, highlightJobIds, handleApplySingle, handleGenerateEmailSingle, handleViewDetail, handleMatchResumeSingle, handleViewResume, handleCancelApply, handleSelfApply, handleConfirmSelfApply, handleSeeEmail, handleLoadJobsSnapshot]
   );
 
   return (
@@ -2189,7 +2208,7 @@ export function ChatLayout() {
           onApplyAll={handleApplyAll}
           onViewDetail={handleViewDetail}
           onSave={handleSave}
-          onEmailHM={handleOpenEmail}
+          onEmailHM={handleGenerateEmailSingle}
           onRemoveJob={handleRemoveJob}
           onClose={() => setShowJobPanel(false)}
           onMatchResume={handleMatchResumeSingle}
@@ -2203,6 +2222,7 @@ export function ChatLayout() {
           onSelfApply={handleSelfApply}
           onConfirmSelfApply={handleConfirmSelfApply}
           emailGeneratedJobIds={emailGeneratedJobIds}
+          emailGeneratingJobIds={emailGeneratingJobIds}
           onSeeEmail={handleSeeEmail}
           selectedJobIds={selectedJobIds}
           onToggleSelect={toggleJobSelection}

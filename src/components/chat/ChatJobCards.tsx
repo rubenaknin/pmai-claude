@@ -20,7 +20,9 @@ interface ChatJobCardsProps {
   onSelfApply?: (jobId: string) => void;
   onConfirmSelfApply?: (jobId: string) => void;
   emailGeneratedJobIds?: Set<string>;
+  emailGeneratingJobIds?: Set<string>;
   onSeeEmail?: (job: Job) => void;
+  highlightJobIds?: Set<string>;
 }
 
 export function ChatJobCards({
@@ -40,7 +42,9 @@ export function ChatJobCards({
   onSelfApply,
   onConfirmSelfApply,
   emailGeneratedJobIds,
+  emailGeneratingJobIds,
   onSeeEmail,
+  highlightJobIds,
 }: ChatJobCardsProps) {
   const displayed = jobs.slice(0, 5);
   const remaining = totalJobs - displayed.length;
@@ -69,7 +73,9 @@ export function ChatJobCards({
             onSelfApply={onSelfApply}
             onConfirmSelfApply={onConfirmSelfApply}
             emailGeneratedJobIds={emailGeneratedJobIds}
+            emailGeneratingJobIds={emailGeneratingJobIds}
             onSeeEmail={onSeeEmail}
+            highlightJobIds={highlightJobIds}
           />
         ))}
       </div>

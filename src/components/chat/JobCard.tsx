@@ -40,6 +40,7 @@ interface JobCardProps {
   onSelfApply?: (jobId: string) => void;
   onConfirmSelfApply?: (jobId: string) => void;
   emailGeneratedJobIds?: Set<string>;
+  emailGeneratingJobIds?: Set<string>;
   onSeeEmail?: (job: Job) => void;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
@@ -65,6 +66,7 @@ export function JobCard({
   onSelfApply,
   onConfirmSelfApply,
   emailGeneratedJobIds,
+  emailGeneratingJobIds,
   onSeeEmail,
   isSelected,
   onToggleSelect,
@@ -80,6 +82,7 @@ export function JobCard({
   const hasRetried = applyRetriedJobIds?.has(job.id) ?? false;
   const isSelfApplying = selfApplyJobIds?.has(job.id) ?? false;
   const hasEmailGenerated = emailGeneratedJobIds?.has(job.id) ?? false;
+  const isEmailGenerating = emailGeneratingJobIds?.has(job.id) ?? false;
   const isHighlighted = highlightJobIds?.has(job.id) ?? false;
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -195,7 +198,7 @@ export function JobCard({
               variant="secondary"
               className={`text-[10px] ${
                 job.matchPercent >= 90
-                  ? "bg-green-500/10 text-green-600"
+                  ? "bg-emerald-500/10 text-emerald-600/70"
                   : job.matchPercent >= 75
                   ? "bg-yellow-500/10 text-yellow-600"
                   : "bg-muted text-muted-foreground"
@@ -244,7 +247,7 @@ export function JobCard({
               )
             ) : job.status.applied ? (
               <span
-                className="inline-flex items-center justify-center h-7 px-2 shrink-0 text-green-600 cursor-default"
+                className="inline-flex items-center justify-center h-7 px-2 shrink-0 text-emerald-600/70 cursor-default"
                 title={`Applied ${job.status.appliedAt || ""}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -259,7 +262,7 @@ export function JobCard({
               <Button
                 size="sm"
                 variant={job.status.resumeGenerated ? "secondary" : "outline"}
-                className={`text-xs h-7 shrink-0 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-green-600" : ""}`}
+                className={`text-xs h-7 shrink-0 ${isMatching ? "relative overflow-hidden" : ""} ${job.status.resumeGenerated ? "text-emerald-600/70" : ""}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (job.status.resumeGenerated && onViewResume) {
@@ -291,24 +294,30 @@ export function JobCard({
             <Button
               size="sm"
               variant="outline"
-              className={`text-xs h-7 px-2 shrink-0 ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
+              className={`text-xs h-7 px-2 shrink-0 ${isEmailGenerating ? "relative overflow-hidden" : ""} ${hasEmailGenerated && !job.status.emailSent ? "gap-1 animate-[email-nudge_2s_ease-in-out_infinite] border-primary/40 text-primary" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isEmailGenerating) return;
                 if (hasEmailGenerated && !job.status.emailSent && onSeeEmail) {
                   onSeeEmail(job);
-                } else {
+                } else if (!job.status.emailSent) {
                   onEmailHM(job);
                 }
               }}
-              disabled={job.status.emailSent}
-              title={job.status.emailSent ? "Email sent" : hasEmailGenerated ? "See email" : "Email hiring manager"}
+              disabled={job.status.emailSent || isEmailGenerating}
+              title={job.status.emailSent ? "Email sent" : isEmailGenerating ? "Drafting email..." : hasEmailGenerated ? "See email" : "Email hiring manager"}
             >
-              {job.status.emailSent ? (
+              {isEmailGenerating ? (
+                <>
+                  <span className="absolute inset-y-0 left-0 bg-primary/30 animate-[progress-fill_30s_ease-out_forwards]" />
+                  <span className="relative z-10 flex items-center gap-1">Drafting...</span>
+                </>
+              ) : job.status.emailSent ? (
                 compact ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><polyline points="20 6 9 17 4 12" /></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600/70"><polyline points="20 6 9 17 4 12" /></svg>
                 ) : (
                   <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-green-600"><polyline points="20 6 9 17 4 12" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1 text-emerald-600/70"><polyline points="20 6 9 17 4 12" /></svg>
                     Emailed
                   </>
                 )
