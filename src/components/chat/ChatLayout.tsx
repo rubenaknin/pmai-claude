@@ -150,6 +150,7 @@ export function ChatLayout() {
   const [applyingJobIds, setApplyingJobIds] = useState<Set<string>>(new Set());
   const [applyRetriedJobIds, setApplyRetriedJobIds] = useState<Set<string>>(new Set());
   const applyAbortControllers = useRef<Map<string, AbortController>>(new Map());
+  const resumeHtmlCache = useRef<Map<string, string>>(new Map());
 
   const addApplyingId = useCallback((id: string) => {
     setApplyingJobIds((prev) => new Set(prev).add(id));
@@ -212,6 +213,7 @@ export function ChatLayout() {
   const pendingMatchJobRef = useRef<Job | null>(null);
   const pendingApplyResumeJobRef = useRef<Job | null>(null);
   const pendingAutoSearch = useRef(false);
+  const lastAppliedJobRef = useRef<Job | null>(null);
   const handleUserMessageRef = useRef<(content: string) => void>(() => {});
 
   const scrollToBottom = useCallback(() => {
@@ -411,6 +413,7 @@ export function ChatLayout() {
           }));
           updateActionMessage(actionMsgId, `Auto-applied to ${job.title} at ${job.company}`);
           if (data.html) {
+            resumeHtmlCache.current.set(jobId, data.html);
             setResumeData({
               html: data.html,
               highlights: [],
@@ -424,6 +427,17 @@ export function ChatLayout() {
               ...j,
               status: { ...j.status, resumeGenerated: true, resumeGeneratedAt: new Date().toISOString() },
             }));
+          }
+          // Offer to email the hiring manager
+          if (!job.status.emailSent) {
+            lastAppliedJobRef.current = job;
+            addBotMessage(
+              `Applied to **${job.title}** at **${job.company}**! Would you like me to send a personalized email to the hiring manager?`
+            );
+            setSuggestions([
+              `Yes, email ${job.company}'s hiring manager`,
+              "No thanks",
+            ]);
           }
         } catch (err) {
           if ((err as Error).name === "AbortError") {
@@ -776,6 +790,7 @@ export function ChatLayout() {
           }
 
           if (data.html) {
+            resumeHtmlCache.current.set(job.id, data.html);
             setResumeData({
               html: data.html,
               highlights: [],
@@ -888,33 +903,38 @@ export function ChatLayout() {
     [handleMatchResume, addBotMessage, addActionMessage, handleDownloadResume, handlePreviewEditResume, handleApplySingle, handleOpenEmail, selectedJobIds]
   );
 
-  // --- View existing matched resume for a job (no regeneration) ---
+  // --- View existing matched resume for a job (uses cache, no regeneration) ---
   const handleViewResume = useCallback(
-    async (job: Job) => {
+    (job: Job) => {
+      const cached = resumeHtmlCache.current.get(job.id);
+      if (cached) {
+        handlePreviewEditResume(cached);
+        return;
+      }
+      // Fallback: if somehow not cached, fetch it
       if (!job._apiData?.url || !job._apiData?.jobId) return;
       addMatchingId(job.id);
-      try {
-        const res = await fetch("/api/resume/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: job._apiData.url,
-            jobId: job._apiData.jobId,
-            jobName: job._apiData.jobName || job.title,
-            companyName: job._apiData.companyName || job.company,
-            jobDetails: job._apiData.jobDetails || job.description,
-            location: job._apiData.location || job.location,
-          }),
-        });
-        const data = await res.json();
-        if (data.html) {
-          handlePreviewEditResume(data.html);
-        }
-      } catch (err) {
-        console.error("View resume failed:", err);
-      } finally {
-        removeMatchingId(job.id);
-      }
+      fetch("/api/resume/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: job._apiData.url,
+          jobId: job._apiData.jobId,
+          jobName: job._apiData.jobName || job.title,
+          companyName: job._apiData.companyName || job.company,
+          jobDetails: job._apiData.jobDetails || job.description,
+          location: job._apiData.location || job.location,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.html) {
+            resumeHtmlCache.current.set(job.id, data.html);
+            handlePreviewEditResume(data.html);
+          }
+        })
+        .catch((err) => console.error("View resume failed:", err))
+        .finally(() => removeMatchingId(job.id));
     },
     [addMatchingId, removeMatchingId, handlePreviewEditResume]
   );
@@ -933,8 +953,8 @@ export function ChatLayout() {
         addMatchingId(job.id);
       }
 
-      addBotMessage(
-        `Matching your resume for ${selectedJobs.length} selected job${selectedJobs.length !== 1 ? "s" : ""}...`
+      const matchStatusMsgId = addActionMessage(
+        `Matching your resume for ${selectedJobs.length} selected job${selectedJobs.length !== 1 ? "s" : ""}`
       );
 
       let successCount = 0;
@@ -964,16 +984,18 @@ export function ChatLayout() {
       // Post summary
       if (controller.signal.aborted) return;
       if (failCount === 0) {
+        updateActionMessage(matchStatusMsgId, `Matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}`);
         addBotMessage(
           `All done! Successfully matched your resume for ${successCount} job${successCount !== 1 ? "s" : ""}.`
         );
       } else {
+        updateActionMessage(matchStatusMsgId, `Matched ${successCount} of ${selectedJobs.length} job${selectedJobs.length !== 1 ? "s" : ""}`);
         addBotMessage(
           `Finished: ${successCount} matched successfully, ${failCount} failed. You can retry the failed ones individually.`
         );
       }
     },
-    [addMatchingId, removeMatchingId, handleMatchResume, addBotMessage]
+    [addMatchingId, removeMatchingId, handleMatchResume, addBotMessage, addActionMessage, updateActionMessage]
   );
 
   // --- Apply all helpers ---
@@ -1024,6 +1046,7 @@ export function ChatLayout() {
             status: { ...j.status, applied: true, appliedAt: "just now" },
           }));
           if (data.html) {
+            resumeHtmlCache.current.set(job.id, data.html);
             if (i === 0) {
               setResumeData({
                 html: data.html,
@@ -1234,6 +1257,28 @@ export function ChatLayout() {
           return;
         }
       }
+
+      // Handle "email X's hiring manager" after single apply
+      if (lastAppliedJobRef.current && (lower.includes("yes, email") || lower.includes("hiring manager"))) {
+        const emailJob = lastAppliedJobRef.current;
+        lastAppliedJobRef.current = null;
+        setIsTyping(false);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content },
+          { role: "assistant", content: `[Action: email_hm(${emailJob.title} at ${emailJob.company})]` },
+        ]);
+        await handleOpenEmail(emailJob);
+        return;
+      }
+      if (lastAppliedJobRef.current && lower.includes("no thanks")) {
+        lastAppliedJobRef.current = null;
+        setIsTyping(false);
+        addBotMessage("No problem! Let me know if you need anything else.");
+        setSuggestions(["Find more jobs", "Help me prep for interviews"]);
+        return;
+      }
+      lastAppliedJobRef.current = null; // Clear if any other message
 
       // Handle pending bulk apply tailor question
       if (pendingApplyJobsRef.current) {
