@@ -34,6 +34,12 @@ RULES for the "search" parameter:
           description:
             "Location filter (e.g. 'New York', 'Remote', 'Tel Aviv'). Omit to use the user's profile location.",
         },
+        filter_keywords: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional keywords to filter results by tags/industry. Use when the user mentions a specific domain (e.g. 'cybersecurity' → ['cyber', 'security', 'cybersecurity']). Results will only include jobs whose tags, title, or company match at least one keyword.",
+        },
       },
       required: [],
     },
@@ -44,7 +50,14 @@ RULES for the "search" parameter:
       "Get personalized job recommendations based on the user's profile, resume, and preferences. Use this when the user says 'find me jobs' or 'show me matching jobs' WITHOUT specifying a particular role — this uses their profile's title and location automatically. Also use this as the default when you're unsure what role to search for.",
     input_schema: {
       type: "object" as const,
-      properties: {},
+      properties: {
+        filter_keywords: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional keywords to filter results by tags/industry (e.g. ['cyber', 'security'] for cybersecurity jobs).",
+        },
+      },
       required: [],
     },
   },

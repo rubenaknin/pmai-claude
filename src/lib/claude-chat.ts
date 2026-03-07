@@ -66,13 +66,18 @@ HOW JOB SEARCH WORKS:
 
 SEARCH RULES:
 - NEVER search for generic words like "jobs", "positions", "roles", "work" — these are NOT job titles
-- You MUST have BOTH a job title/role AND a location before calling search_jobs. If either is missing, ask the user for the missing piece instead of searching.
-- If the user provides a role but no location, ask "Where are you looking?" before searching
+- You MUST have BOTH a job title/role AND a location before calling search_jobs. If either is missing, ask the user for the missing piece instead of searching. EXCEPTION: if the user has uploaded a resume, you may search without a location since the backend will use their profile's location.
+- If the user provides a role but no location: if they have a resume uploaded, go ahead and search (omit location). Otherwise ask "Where are you looking?".
 - If the user provides a location but no role: check if we have a job title from their profile (see USER PROFILE below). If yes, use that title. If no profile title, ask the user what kind of role they want.
-- If the user gives no specifics at all, ask what they're looking for and where
+- If the user says "find me jobs" or "find jobs matching my resume" with no specifics: if they have a resume, use get_job_recommendations. Otherwise ask what they're looking for.
 - NEVER call search_jobs with only a location and no title (unless the profile provides the title)
-- NEVER call search_jobs with only a title and no location — ask where they want to work
 - IMPORTANT: Once you have gathered BOTH the title and location (either from the current message or from the conversation history), you MUST call search_jobs immediately in that same turn. Do NOT just acknowledge — actually search. The results will appear in the right panel automatically.
+
+DOMAIN/INDUSTRY FILTERING:
+- When the user mentions a specific industry or domain (e.g. "cybersecurity companies", "fintech startups", "healthcare firms"), extract relevant keywords and pass them as filter_keywords to search_jobs or get_job_recommendations
+- Example: "find account manager jobs for cybersecurity companies" → search="account manager", filter_keywords=["cyber", "security", "cybersecurity", "infosec", "defense"]
+- Example: "find me fintech jobs" → filter_keywords=["fintech", "finance", "financial", "banking", "payments"]
+- The filter_keywords will be matched against job tags, titles, and company names to narrow results
 
 RESUME & EMAIL GENERATION:
 - To generate a resume or email, you MUST have the job's ID, URL, title, company, and description
@@ -134,11 +139,74 @@ const JUNK_ROLES = new Set([
   "all", "these", "those", "it", "them",
 ]);
 
+/** Check if message is asking for resume/profile-based job search */
+function isResumeBasedSearch(message: string): boolean {
+  return /\b(match|based on|from|using|with)\s+(my\s+)?(resume|cv|profile)\b/i.test(message)
+    || /\b(my resume|my cv|my profile)\b/i.test(message);
+}
+
+/** Extract domain/industry keywords from message (e.g. "cybersecurity companies" → ["cyber", "security"]) */
+function extractDomainKeywords(message: string): string[] {
+  const patterns = [
+    // "for cybersecurity companies/firms/startups"
+    /\b(?:for|in|at)\s+([\w\s-]+?)\s+(?:companies?|firms?|startups?|industry|sector|organizations?|businesses?)\b/i,
+    // "in the cybersecurity field/space/domain"
+    /\b(?:in|for)\s+(?:the\s+)?([\w\s-]+?)\s+(?:field|space|domain|area|world)\b/i,
+  ];
+
+  for (const p of patterns) {
+    const m = message.match(p);
+    if (m) {
+      const domain = m[1].trim().toLowerCase();
+      // Expand common domains into tag-friendly keywords
+      const expansions: Record<string, string[]> = {
+        cybersecurity: ["cyber", "security", "cybersecurity", "infosec", "defense"],
+        fintech: ["fintech", "finance", "financial", "banking", "payments"],
+        healthtech: ["health", "healthcare", "medical", "biotech"],
+        healthcare: ["health", "healthcare", "medical", "biotech"],
+        edtech: ["education", "edtech", "learning", "elearning"],
+        ai: ["ai", "artificial intelligence", "machine learning", "ml", "deep learning"],
+        "artificial intelligence": ["ai", "artificial intelligence", "machine learning", "ml"],
+        crypto: ["crypto", "blockchain", "web3", "defi"],
+        blockchain: ["blockchain", "crypto", "web3", "defi"],
+        gaming: ["gaming", "games", "game"],
+        ecommerce: ["ecommerce", "e-commerce", "retail", "commerce"],
+        "e-commerce": ["ecommerce", "e-commerce", "retail", "commerce"],
+        saas: ["saas", "software", "cloud"],
+        defense: ["defense", "defence", "military", "security", "cyber"],
+      };
+      const expanded = expansions[domain];
+      if (expanded) return expanded;
+      // For unknown domains, split into words as keywords
+      return domain.split(/\s+/).filter((w) => w.length > 2);
+    }
+  }
+  return [];
+}
+
+/** Filter jobs by domain/tag keywords — keeps jobs where any tag, title, or company matches */
+function filterJobsByKeywords<T extends { title: string; company: string; tags: string[] }>(
+  jobs: T[],
+  keywords: string[]
+): T[] {
+  if (keywords.length === 0) return jobs;
+  return jobs.filter((job) => {
+    const searchable = [
+      ...job.tags.map((t) => t.toLowerCase()),
+      job.title.toLowerCase(),
+      job.company.toLowerCase(),
+    ].join(" ");
+    return keywords.some((kw) => searchable.includes(kw));
+  });
+}
+
 /** Extract an explicit job role from the message. Returns null if the user didn't specify one. */
 function extractRole(message: string): string | null {
   const patterns = [
     // "find me marketing roles in paris", "search for frontend engineer jobs"
     /(?:find|search|look|get|show)\s+(?:me\s+)?(?:some\s+)?(.+?)\s+(?:jobs?|roles?|positions?|openings?|opportunities)\b/i,
+    // "find jobs for account manager", "get jobs as data scientist"
+    /(?:find|search|look for|get|show)\s+(?:me\s+)?(?:jobs?|roles?|positions?)\s+(?:for|as)\s+(?:a\s+|an\s+)?(.+?)(?:\s+(?:in|at|near|for)\b|[.!?]?\s*$)/i,
     // "looking for data scientist positions"
     /(?:looking\s+for|interested\s+in)\s+(.+?)\s+(?:jobs?|roles?|positions?)\b/i,
     // "I want a marketing job in paris"
@@ -151,6 +219,8 @@ function extractRole(message: string): string | null {
       let role = match[1].trim();
       // Strip leading filler words
       role = role.replace(/^(some|any|a|the|good|great|new|best|more|few)\s+/i, "").trim();
+      // Strip trailing filler like "for cybersecurity companies" that leaked into role
+      role = role.replace(/\s+(?:for|in|at|near)\s+.*$/i, "").trim();
       // Reject junk/filler terms that are not actual job titles
       if (JUNK_ROLES.has(role.toLowerCase())) continue;
       if (role.length > 1 && role.length < 60) {
@@ -205,12 +275,48 @@ async function handleFirstMessage(
   const name = userStatus?.userFirstName;
   const profileTitle = userStatus?.dynamicTitle;
   const hasResume = userStatus?.hasResume;
-  const isLoggedIn = userStatus?.isLoggedIn;
+  const greeting = name ? `Sure, ${name}!` : "Sure!";
+  const domainKeywords = extractDomainKeywords(userMessage);
+
+  // ── Resume-based search: "find jobs that match my resume" ──
+  if (isResumeBasedSearch(userMessage) && hasResume) {
+    const raw = await getJobRecommendations();
+    let { jobs, total } = mapSearchResponse(raw);
+
+    // Apply domain keyword filtering if present
+    if (domainKeywords.length > 0) {
+      jobs = filterJobsByKeywords(jobs, domainKeywords);
+      total = jobs.length;
+    }
+
+    if (debug) {
+      debug.toolUsed = "get_job_recommendations";
+      debug.toolInput = {};
+      debug.networkLogs = getNetworkLogs();
+    }
+
+    return {
+      botMessage: `${greeting} I found ${total} job${total !== 1 ? "s" : ""} matching your profile for you.`,
+      actionType: "show_jobs",
+      data: { jobs, totalJobs: total },
+      suggestions: buildSuggestions("show_jobs"),
+      _debug: debug,
+    };
+  }
+
+  // If the user mentions "my resume" but hasn't uploaded one yet
+  if (isResumeBasedSearch(userMessage) && !hasResume) {
+    return {
+      botMessage: `${greeting} I don't have your resume yet. Please upload it so I can find the best matching jobs for you!`,
+      actionType: "general",
+      suggestions: ["Upload my resume"],
+      _debug: debug,
+    };
+  }
 
   const role = extractRole(userMessage);
   const location = extractLocation(userMessage);
   const profileLocation = userStatus?.dynamicLocation;
-  const greeting = name ? `Sure, ${name}!` : "Sure!";
 
   // Resolve the effective title and location (user-specified takes priority, then profile)
   // Proper-case user input for clean display
@@ -220,7 +326,13 @@ async function handleFirstMessage(
   // ── Both title and location available → search immediately ──
   if (effectiveTitle && effectiveLocation) {
     const raw = await searchJobs({ search: role || undefined, location: effectiveLocation });
-    const { jobs, total } = mapSearchResponse(raw);
+    let { jobs, total } = mapSearchResponse(raw);
+
+    // Apply domain keyword filtering
+    if (domainKeywords.length > 0) {
+      jobs = filterJobsByKeywords(jobs, domainKeywords);
+      total = jobs.length;
+    }
 
     if (debug) {
       debug.toolUsed = "search_jobs";
@@ -230,6 +342,32 @@ async function handleFirstMessage(
 
     return {
       botMessage: `${greeting} I found ${total} ${effectiveTitle} job${total !== 1 ? "s" : ""} in ${effectiveLocation} for you.`,
+      actionType: "show_jobs",
+      data: { jobs, totalJobs: total },
+      suggestions: buildSuggestions("show_jobs"),
+      _debug: debug,
+    };
+  }
+
+  // ── Title but no location: if user has a resume, use profile-based search ──
+  if (effectiveTitle && !effectiveLocation && hasResume) {
+    // User has a resume → search using the role (backend adds profile location automatically)
+    const raw = await searchJobs({ search: role || undefined });
+    let { jobs, total } = mapSearchResponse(raw);
+
+    if (domainKeywords.length > 0) {
+      jobs = filterJobsByKeywords(jobs, domainKeywords);
+      total = jobs.length;
+    }
+
+    if (debug) {
+      debug.toolUsed = "search_jobs";
+      debug.toolInput = { search: role || profileTitle };
+      debug.networkLogs = getNetworkLogs();
+    }
+
+    return {
+      botMessage: `${greeting} I found ${total} ${effectiveTitle} job${total !== 1 ? "s" : ""} for you.`,
       actionType: "show_jobs",
       data: { jobs, totalJobs: total },
       suggestions: buildSuggestions("show_jobs"),
@@ -263,7 +401,32 @@ async function handleFirstMessage(
     };
   }
 
-  // Neither title nor location
+  // Neither title nor location — if user has resume, use profile-based recommendations
+  if (hasResume) {
+    const raw = await getJobRecommendations();
+    let { jobs, total } = mapSearchResponse(raw);
+
+    if (domainKeywords.length > 0) {
+      jobs = filterJobsByKeywords(jobs, domainKeywords);
+      total = jobs.length;
+    }
+
+    if (debug) {
+      debug.toolUsed = "get_job_recommendations";
+      debug.toolInput = {};
+      debug.networkLogs = getNetworkLogs();
+    }
+
+    return {
+      botMessage: `${greeting} I found ${total} job${total !== 1 ? "s" : ""} matching your profile for you.`,
+      actionType: "show_jobs",
+      data: { jobs, totalJobs: total },
+      suggestions: buildSuggestions("show_jobs"),
+      _debug: debug,
+    };
+  }
+
+  // No resume, no title, no location
   return {
     botMessage: `${greeting} What kind of roles are you looking for, and where?${resumeHint}`,
     actionType: "general",
@@ -410,7 +573,15 @@ async function executeTool(
   switch (toolName) {
     case "get_job_recommendations": {
       const raw = await getJobRecommendations();
-      const { jobs, total } = mapSearchResponse(raw);
+      let { jobs, total } = mapSearchResponse(raw);
+
+      // Apply domain keyword filtering if provided
+      const recKeywords = (input.filter_keywords as string[] | undefined) || [];
+      if (recKeywords.length > 0) {
+        jobs = filterJobsByKeywords(jobs, recKeywords.map((k) => k.toLowerCase()));
+        total = jobs.length;
+      }
+
       return {
         toolResult: { found: total, showing: jobs.length, jobs: jobs.map(summarizeJob) },
         actionType: "show_jobs",
@@ -430,7 +601,15 @@ async function executeTool(
         search: searchTerm,
         location: input.location as string | undefined,
       });
-      const { jobs, total } = mapSearchResponse(raw);
+      let { jobs, total } = mapSearchResponse(raw);
+
+      // Apply domain keyword filtering if provided
+      const searchKeywords = (input.filter_keywords as string[] | undefined) || [];
+      if (searchKeywords.length > 0) {
+        jobs = filterJobsByKeywords(jobs, searchKeywords.map((k) => k.toLowerCase()));
+        total = jobs.length;
+      }
+
       return {
         toolResult: { found: total, showing: jobs.length, jobs: jobs.map(summarizeJob) },
         actionType: "show_jobs",
