@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 const PLACEHOLDERS = [
@@ -27,8 +27,12 @@ export function Hero() {
   const [displayedPlaceholder, setDisplayedPlaceholder] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [value, setValue] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
 
   useEffect(() => {
     const current = PLACEHOLDERS[placeholderIndex];
@@ -71,6 +75,58 @@ export function Hero() {
       handleSubmit(e);
     }
   };
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/resume/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.success) {
+        router.push(`/chat?q=${encodeURIComponent("Here's my resume — find jobs for me")}`);
+      } else {
+        setIsUploading(false);
+        alert(data.error || "Could not process your resume. Please try a different file.");
+      }
+    } catch {
+      setIsUploading(false);
+      alert("Upload failed. Please check your connection and try again.");
+    }
+  }, [router]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes("Files")) setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileUpload(file);
+  }, [handleFileUpload]);
+
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileUpload(file);
+  }, [handleFileUpload]);
 
   return (
     <section className="relative overflow-hidden px-6 pt-20 pb-16 sm:pt-32 sm:pb-24 lg:px-8">
@@ -126,7 +182,32 @@ export function Hero() {
             <div className="absolute -inset-4 rounded-3xl bg-gradient-to-r from-emerald-400/20 via-teal-400/15 to-cyan-400/20 blur-2xl animate-glow-pulse" />
 
             {/* Card */}
-            <div className="relative rounded-2xl border border-gray-200/80 bg-white/80 backdrop-blur-xl shadow-2xl shadow-gray-200/60 overflow-hidden">
+            <div
+              className="relative rounded-2xl border border-gray-200/80 bg-white/80 backdrop-blur-xl shadow-2xl shadow-gray-200/60 overflow-hidden"
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              {/* Drop overlay */}
+              {isDragging && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-emerald-400/50 bg-emerald-50/50 px-10 py-8">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
+                    <p className="text-sm font-medium text-emerald-600">Drop your resume here</p>
+                    <p className="text-xs text-gray-400">PDF, DOC, or DOCX</p>
+                  </div>
+                </div>
+              )}
+              {/* Upload spinner overlay */}
+              {isUploading && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                    <p className="text-sm text-gray-500">Uploading resume...</p>
+                  </div>
+                </div>
+              )}
               {/* Header */}
               <div className="flex items-center gap-2.5 border-b border-gray-100 px-5 py-3">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-white text-[11px] font-bold shadow-sm">
@@ -136,6 +217,15 @@ export function Hero() {
                   Nikki, your assistant
                 </span>
               </div>
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx"
+                className="hidden"
+                onChange={handleFileChange}
+              />
 
               {/* Input area */}
               <div className="px-5 pt-4 pb-3">
@@ -147,7 +237,7 @@ export function Hero() {
                     onKeyDown={handleKeyDown}
                     placeholder={displayedPlaceholder}
                     rows={2}
-                    className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-gray-400/70 sm:text-base leading-relaxed"
+                    className="flex-1 resize-none bg-transparent text-gray-900 text-sm outline-none placeholder:text-gray-400/70 sm:text-base leading-relaxed"
                   />
                   <button
                     type="submit"
@@ -169,8 +259,12 @@ export function Hero() {
                     </svg>
                   </button>
                 </div>
-                {/* Resume hint */}
-                <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+                {/* Resume hint — now clickable */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-3 flex items-center gap-2 text-xs text-gray-400 hover:text-emerald-500 transition-colors cursor-pointer"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="14"
@@ -184,8 +278,8 @@ export function Hero() {
                   >
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                   </svg>
-                  <span>Recommended: drop your resume here</span>
-                </div>
+                  <span>Attach or drop your resume here</span>
+                </button>
               </div>
             </div>
           </form>
