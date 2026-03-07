@@ -29,10 +29,21 @@ export function Hero() {
   const [value, setValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [userCity, setUserCity] = useState<string | null>(null);
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+
+  // Detect user's city from IP for location-based suggestion
+  useEffect(() => {
+    fetch("https://ipapi.co/json/")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.city) setUserCity(data.city);
+      })
+      .catch(() => { /* fallback: no location */ });
+  }, []);
 
   useEffect(() => {
     const current = PLACEHOLDERS[placeholderIndex];
@@ -211,14 +222,7 @@ export function Hero() {
                 </div>
               )}
               {/* Header */}
-              <div className="flex items-center gap-2.5 border-b border-gray-100 px-5 py-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-white text-[11px] font-bold shadow-sm">
-                  N
-                </div>
-                <span className="text-sm font-medium text-gray-500">
-                  Nikki, your assistant
-                </span>
-              </div>
+              <div className="border-b border-gray-100 px-5 py-2" />
 
               {/* Hidden file input */}
               <input
@@ -261,6 +265,24 @@ export function Hero() {
                     </svg>
                   </button>
                 </div>
+                {/* Suggestion pills */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/chat?q=${encodeURIComponent(userCity ? `Find me a job in ${userCity}` : "Find me a job")}`)}
+                    className="rounded-full border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors"
+                  >
+                    {userCity ? `Find me a job in ${userCity}` : "Find me a job"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-full border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors"
+                  >
+                    Upload my resume
+                  </button>
+                </div>
+
                 {/* Resume hint — now clickable */}
                 <button
                   type="button"

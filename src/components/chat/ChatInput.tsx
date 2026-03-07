@@ -1,9 +1,28 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Job } from "./jobData";
+
+// Web Speech API types
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -28,8 +47,61 @@ export function ChatInput({
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  // Check for speech recognition support
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>;
+    setHasSpeechSupport(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+  }, []);
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    const w = window as unknown as Record<string, unknown>;
+    const SpeechRecognition = (w.SpeechRecognition || w.webkitSpeechRecognition) as (new () => SpeechRecognitionInstance) | undefined;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognitionRef.current = recognition;
+
+    let finalTranscript = value;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += (finalTranscript ? " " : "") + transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      setValue(finalTranscript + (interim ? (finalTranscript ? " " : "") + interim : ""));
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognition.start();
+    setIsRecording(true);
+  }, [isRecording, value]);
 
   const handleSend = () => {
     const trimmed = value.trim();
@@ -217,11 +289,28 @@ export function ChatInput({
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
           </Button>
         )}
+        {/* Voice input button */}
+        {hasSpeechSupport && (
+          <Button
+            variant={isRecording ? "default" : "outline"}
+            size="icon"
+            className={`shrink-0 h-9 w-9 ${isRecording ? "bg-red-500 hover:bg-red-600 text-white" : ""}`}
+            onClick={toggleRecording}
+            disabled={disabled}
+            title={isRecording ? "Stop recording" : "Voice input"}
+          >
+            {isRecording ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
+            )}
+          </Button>
+        )}
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Type a message..."
+          placeholder={isRecording ? "Listening..." : "Type a message..."}
           disabled={disabled}
           className="flex-1"
           autoFocus

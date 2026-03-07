@@ -776,11 +776,19 @@ export function ChatLayout() {
   // --- Load jobs snapshot (from "Show jobs" button in chat) ---
   // Merges snapshot with current job statuses so applied/email/resume state isn't lost
   const handleLoadJobsSnapshot = useCallback(
-    (_snapshotJobs: Job[], _snapshotTotal: number) => {
-      // Just open the sidebar panel — the matched jobs are already in the jobs array.
+    (snapshotJobs: Job[], snapshotTotal: number) => {
+      // Merge snapshot with current job statuses so applied/email/resume state isn't lost
+      const currentById = new Map(jobs.map((j) => [j.id, j]));
+      const merged = snapshotJobs.map((sj) => {
+        const current = currentById.get(sj.id);
+        if (current) return current; // Use current state (preserves applied/email/resume status)
+        return sj;
+      });
+      setJobs(merged);
+      setTotalJobs(snapshotTotal);
       setShowJobPanel(true);
     },
-    []
+    [jobs]
   );
 
   // --- Stop handler ---
@@ -1730,7 +1738,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = incomingJobs.length;
+              const incomingTotal = incomingJobs.length; // Use loaded count (API limit=50)
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);
@@ -1927,7 +1935,7 @@ export function ChatLayout() {
           case "show_jobs": {
             if (data.data?.jobs && data.data.jobs.length > 0) {
               const incomingJobs = data.data.jobs;
-              const incomingTotal = incomingJobs.length;
+              const incomingTotal = incomingJobs.length; // Use loaded count (API limit=50)
               setJobs(incomingJobs);
               setTotalJobs(incomingTotal);
               setShowJobPanel(true);

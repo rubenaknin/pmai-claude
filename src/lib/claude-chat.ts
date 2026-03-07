@@ -336,7 +336,7 @@ async function handleFirstMessage(
 
   // ── Both title and location available → search immediately ──
   if (effectiveTitle && effectiveLocation) {
-    const raw = await searchJobs({ search: role || undefined, location: effectiveLocation });
+    const raw = await searchJobs({ search: role || undefined, location: effectiveLocation, limit: 50 });
     let { jobs, total } = mapSearchResponse(raw);
 
     // Apply domain keyword filtering
@@ -363,7 +363,7 @@ async function handleFirstMessage(
   // ── Title but no location: if user has a resume, use profile-based search ──
   if (effectiveTitle && !effectiveLocation && hasResume) {
     // User has a resume → search using the role (backend adds profile location automatically)
-    const raw = await searchJobs({ search: role || undefined });
+    const raw = await searchJobs({ search: role || undefined, limit: 50 });
     let { jobs, total } = mapSearchResponse(raw);
 
     if (domainKeywords.length > 0) {
@@ -611,6 +611,7 @@ async function executeTool(
       const raw = await searchJobs({
         search: searchTerm,
         location: input.location as string | undefined,
+        limit: 50,
       });
       let { jobs, total } = mapSearchResponse(raw);
 
