@@ -238,13 +238,21 @@ function properCase(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Extract a location from the message (e.g. "in New York" → "New York") */
+/** Extract a location from the message (e.g. "in New York" → "New York").
+ *  Uses the LAST "in/near/around/at" match to skip domain qualifiers
+ *  like "in cybersecurity companies in Tel Aviv" → "Tel Aviv". */
 function extractLocation(message: string): string | null {
-  const match = message.match(/\b(?:in|near|around|at)\s+(.+?)(?:\s*[.!?]?\s*$)/i);
-  if (match) {
-    const loc = match[1].replace(/\s*(please|thanks|thank you|asap|now)$/i, "").trim();
-    if (loc.length > 0 && loc.length < 60) return loc;
-  }
+  const matches = [...message.matchAll(/\b(?:in|near|around|at)\s+/gi)];
+  if (matches.length === 0) return null;
+
+  // Take the last preposition match
+  const last = matches[matches.length - 1];
+  const after = message.slice(last.index! + last[0].length);
+  const loc = after
+    .replace(/\s*[.!?]\s*$/, "")
+    .replace(/\s*(please|thanks|thank you|asap|now)$/i, "")
+    .trim();
+  if (loc.length > 0 && loc.length < 60) return loc;
   return null;
 }
 
